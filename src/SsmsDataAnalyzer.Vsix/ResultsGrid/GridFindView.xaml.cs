@@ -229,9 +229,19 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         private void NextButton_Click(object sender, System.Windows.RoutedEventArgs e) => AdvanceOrSearch(forward: true);
         private void PreviousButton_Click(object sender, System.Windows.RoutedEventArgs e) => AdvanceOrSearch(forward: false);
 
-        /// <summary>Enter/F3's dual role (Notepad's own find behaves the same way): if the box
-        /// has been edited since the last search, this means "search"; once results exist for
-        /// the current text, it means "go to the next/previous match" instead.</summary>
+        /// <summary>v0.7.3: called from GridFindToolWindow's VSStd97CmdID.FindNext/FindPrev
+        /// command handlers, registered on the pane's own local IMenuCommandService -- see
+        /// that class's doc comment for why this is the supported route for F3/Shift+F3
+        /// (VS's global Edit.FindNext binding claims the raw key before WPF ever sees it,
+        /// the same root cause as Ctrl+F, but command routing reaches us where the raw key
+        /// does not).</summary>
+        internal void FindNextCommand() => AdvanceOrSearch(forward: true);
+        internal void FindPreviousCommand() => AdvanceOrSearch(forward: false);
+
+        /// <summary>Enter/Shift+Enter's dual role (Notepad's own find behaves the same way):
+        /// if the box has been edited since the last search, this means "search"; once
+        /// results exist for the current text, it means "go to the next/previous match"
+        /// instead.</summary>
         private void AdvanceOrSearch(bool forward)
         {
             if (_state == null) return;
@@ -257,18 +267,21 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// owns that accelerator everywhere in SSMS; stealing it would break Find in Files --
         /// see the lead's explicit ruling). Escape does not close this control -- a persistent
         /// tool window is dismissed the normal VS way (its own tab), not via a key inside it.
+        ///
+        /// v0.7.3: F3/Shift+F3 are deliberately NOT handled here -- same reason as Ctrl+F.
+        /// F3 is globally bound to Edit.FindNext, and VS's command routing claims it before
+        /// this WPF KeyDown handler would ever see it, so a case here would be unreachable
+        /// dead code (confirmed by the v0.7.2 field report: F3 did nothing, Shift+Enter did).
+        /// F3/Shift+F3 are now handled the supported way, via VSStd97CmdID commands
+        /// registered on GridFindToolWindow's own local command service -- see that class's
+        /// doc comment and FindNextCommand/FindPreviousCommand above.
         /// </summary>
         private void Root_KeyDown(object sender, KeyEventArgs e)
         {
             if (_state == null) return;
             bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
-            if (e.Key == Key.F3)
-            {
-                AdvanceOrSearch(forward: !shift);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Enter)
+            if (e.Key == Key.Enter)
             {
                 AdvanceOrSearch(forward: !shift);
                 e.Handled = true;
