@@ -1,0 +1,518 @@
+<UserControl x:Class="SsmsDataAnalyzer.Vsix.ToolWindow.ProfileView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:SsmsDataAnalyzer.Vsix.ToolWindow"
+             xmlns:vsp="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="800"
+             Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
+
+    <UserControl.Resources>
+        <local:NullDashConverter x:Key="NullDashConverter" />
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <local:CellMatchStateConverter x:Key="CellMatchStateConverter" />
+
+        <!--
+            Find-in-grid highlight colours (user request — "colour some cell where is data
+            that is ok with filter"). SSMS runs light and dark, so these are VS theme brushes
+            (Microsoft.VisualStudio.PlatformUI.EnvironmentColors), never a hardcoded colour —
+            a hardcoded highlight is how an extension ends up looking broken for half its
+            users. SystemHighlightBrushKey/SystemHighlightTextBrushKey is VS's own
+            selection-highlight pair, so the text-on-highlight contrast is guaranteed by VS's
+            theme design in both themes, not by a colour choice made here. "Other matches" use
+            the same colour at reduced opacity (VS convention: current match stronger than the
+            rest) rather than a second, unrelated colour.
+        -->
+        <SolidColorBrush x:Key="FindCurrentMatchBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" />
+        <SolidColorBrush x:Key="FindCurrentMatchTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightTextColorKey}}" />
+        <SolidColorBrush x:Key="FindOtherMatchBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" Opacity="0.35" />
+    </UserControl.Resources>
+
+    <!--
+        Find-in-grid (Ctrl+F / right-click "Find..." on the grid), user's own request:
+        F3/Enter = next match, Shift+F3 = previous, Escape closes and clears highlights.
+        Bound at the UserControl level so these work regardless of which child (grid or the
+        search box itself) currently has keyboard focus.
+    -->
+    <UserControl.InputBindings>
+        <KeyBinding Key="F" Modifiers="Control" Command="{Binding GridSearch.OpenCommand}" />
+        <KeyBinding Key="F3" Command="{Binding GridSearch.NextCommand}" />
+        <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding GridSearch.PreviousCommand}" />
+        <KeyBinding Key="Return" Command="{Binding GridSearch.NextCommand}" />
+        <KeyBinding Key="Escape" Command="{Binding GridSearch.CloseCommand}" />
+    </UserControl.InputBindings>
+
+    <!--
+        CONTRACT.md Amendment 13, latest revision: the user asked for Object Explorer to be
+        the ONLY entry point ("i dont want possability to analyze anything outside of object
+        explorer... you can use that space maybe for some better data") and then, on
+        follow-up, clarified they want no new metrics either — just more visible grid rows.
+        The old 5-row layout (target textboxes, auth picker, status, grid, footer) is gone.
+        This is 3 rows: a single-line header (identity + Run/Cancel/Copy), a thin
+        status/progress strip (kept — it is live run feedback + Cancel, not part of the
+        "manual entry" UI that was removed), and the grid taking the rest of the height.
+    -->
+    <Grid Margin="6">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--
+            Header: ONE compact line (ProfileViewModel.HeaderSummary already orders its
+            content least-important-last and this TextBlock trims from the end, so overflow
+            drops elapsed time, then the flag summary, then DateCreated, before ever touching
+            table identity or row count — no custom responsive layout needed) plus the action
+            buttons. Read-only text — there is no editable target here any more; the table
+            comes exclusively from Object Explorer's "Analyze Data".
+        -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,4" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Run" Command="{Binding RunCommand}" Padding="10,2" Margin="0,0,4,0" />
+                <Button Content="Cancel" Command="{Binding CancelCommand}" Padding="10,2" Margin="0,0,10,0" />
+                <Button Content="Copy as Markdown" Command="{Binding CopyMarkdownCommand}" Padding="8,2" Margin="0,0,4,0" />
+                <Button Content="Copy as CSV" Command="{Binding CopyCsvCommand}" Padding="8,2" />
+            </StackPanel>
+            <TextBlock Text="{Binding HeaderSummary}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+        </DockPanel>
+
+        <!-- Status / progress strip: live run feedback and Cancel, not manual-entry UI. -->
+        <Grid Grid.Row="1" Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="220" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <ProgressBar Grid.Column="1" Height="16" Minimum="0" Maximum="100"
+                         IsIndeterminate="{Binding IsIndeterminate}"
+                         Value="{Binding ProgressPercent, Mode=OneWay}"
+                         Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibilityConverter}}" />
+        </Grid>
+
+        <!--
+            Grid row 2 hosts BOTH the DataGrid and the find popup, sharing the same cell — the
+            popup (defined after the grid, so it paints on top) floats top-right like a
+            Notepad-style find box rather than pushing the grid down a whole extra row.
+        -->
+        <Grid Grid.Row="2">
+
+            <!--
+                Column profile grid — gets the rest of the window's height, which is the
+                actual point of this change. Widths tightened (and Collation added) so
+                Min/Max/Avg Len/Flags/Collation are reachable at a normal tool-window width
+                instead of needing horizontal scroll; Column/Type keep the most room since
+                they're read on every row.
+            -->
+            <DataGrid x:Name="ProfileGrid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False"
+                      IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                      GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                      AlternatingRowBackground="#10000000"
+                      ContextMenuOpening="ProfileGrid_ContextMenuOpening">
+                <DataGrid.ContextMenu>
+                    <!--
+                        CONTRACT.md Amendment 14/15 "Go to source": ProfileGrid_ContextMenuOpening
+                        (code-behind) inserts/removes "Go to source table" and "Go to source for
+                        this value" items at the top of this same ContextMenu instance on every
+                        open, based on which row/cell was right-clicked — see that handler for the
+                        gating rules. The static "Find..." item below is always present.
+                    -->
+                    <ContextMenu>
+                        <MenuItem Header="Find..." Command="{Binding GridSearch.OpenCommand}" />
+                    </ContextMenu>
+                </DataGrid.ContextMenu>
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Column" Binding="{Binding Name}" Width="140">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Column">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Column">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Type" Binding="{Binding TypeName}" Width="70">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Type">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Type">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Collation" Binding="{Binding Collation, Converter={StaticResource NullDashConverter}}" Width="90">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Collation">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Collation">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <!--
+                        CONTRACT.md Amendment 13, Bug 1 — the actual root cause, found by a
+                        rendering harness that scrolled the grid and caught a real,
+                        always-firing exception: DataGridCheckBoxColumn.Binding defaults to
+                        TwoWay (CheckBox's own default target-binding mode), and
+                        DataGrid.IsReadOnly="True" at the grid level does NOT change that — it
+                        only blocks UI editing, not the Binding object WPF builds. Against
+                        IsNullable/IsIdentity/IsPrimaryKey (get-only properties, no setter),
+                        that TwoWay attach throws InvalidOperationException ("cannot work on
+                        the read-only property...") from inside the binding engine's
+                        layout-pass callback on EVERY container generation — i.e. on every
+                        scroll that realizes new rows. That plausibly aborts the SAME batch's
+                        other pending bindings (Column, Type, Distinct, ...) for those rows,
+                        which is why rows rendered blank in a no-pattern-visible way that
+                        shifted while scrolling. Mode=OneWay makes these three columns match
+                        what IsReadOnly already implies. Not part of find-in-grid — checkbox
+                        columns are excluded from search per the user's own column list.
+                    -->
+                    <DataGridCheckBoxColumn Header="Null" Binding="{Binding IsNullable, Mode=OneWay}" Width="40" />
+                    <DataGridCheckBoxColumn Header="Ident" Binding="{Binding IsIdentity, Mode=OneWay}" Width="40" />
+                    <DataGridCheckBoxColumn Header="PK" Binding="{Binding IsPrimaryKey, Mode=OneWay}" Width="30" />
+                    <DataGridTextColumn Header="Filled" Binding="{Binding Filled, Converter={StaticResource NullDashConverter}}" Width="65">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Filled">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Filled">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Fill %" Binding="{Binding FillPercent, StringFormat={}{0:0.0}, Converter={StaticResource NullDashConverter}}" Width="55">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Fill %">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Fill %">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Blank" Binding="{Binding Blank, Converter={StaticResource NullDashConverter}}" Width="60">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Blank">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Blank">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+
+                    <!--
+                        Distinct: exact count or a placeholder (blank/em-dash), never an
+                        approximation — CONTRACT.md forbids showing a guessed cardinality.
+                        ToolTip surfaces SkipReason (e.g. "Distinct counts are not computed on
+                        sampled data") when the value is intentionally withheld.
+                        DataGridTemplateColumn supports CellStyle the same as a bound column.
+                    -->
+                    <DataGridTemplateColumn Header="Distinct" Width="65">
+                        <DataGridTemplateColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Distinct">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Distinct">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTemplateColumn.CellStyle>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DistinctDisplay}" ToolTip="{Binding SkipReason}"
+                                           HorizontalAlignment="Right" Margin="4,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Distinct %" Binding="{Binding DistinctPercent, StringFormat={}{0:0.0}, Converter={StaticResource NullDashConverter}}" Width="60" />
+
+                    <DataGridTextColumn Header="Last Fill" Binding="{Binding LastFillDate, StringFormat={}{0:yyyy-MM-dd}, Converter={StaticResource NullDashConverter}}" Width="80">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Last Fill">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Last Fill">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Min" Binding="{Binding MinValue}" Width="80">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Min">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Min">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Max" Binding="{Binding MaxValue}" Width="80">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Max">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Max">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Avg Len" Binding="{Binding AvgByteLength, StringFormat={}{0:0.0}, Converter={StaticResource NullDashConverter}}" Width="60">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Avg Len">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Avg Len">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Flags" Binding="{Binding FlagsDisplay}" Width="*" MinWidth="90">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Style.Triggers>
+                                    <DataTrigger Value="Match">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Flags">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindOtherMatchBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Value="Current">
+                                        <DataTrigger.Binding>
+                                            <MultiBinding Converter="{StaticResource CellMatchStateConverter}" ConverterParameter="Flags">
+                                                <Binding Path="MatchedColumns" />
+                                                <Binding Path="CurrentMatchColumn" />
+                                            </MultiBinding>
+                                        </DataTrigger.Binding>
+                                        <Setter Property="Background" Value="{DynamicResource FindCurrentMatchBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource FindCurrentMatchTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <!--
+                The find popup itself — floats top-right over the grid, Notepad style.
+                Visible only while GridSearch.IsOpen; ProfileView.xaml.cs focuses the
+                TextBox whenever it becomes visible.
+            -->
+            <Border Visibility="{Binding GridSearch.IsOpen, Converter={StaticResource BoolToVisibilityConverter}}"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0"
+                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                    BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                    BorderThickness="1" CornerRadius="2" Padding="6">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.3" />
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <TextBox x:Name="FindTextBox" Width="160" VerticalAlignment="Center"
+                             Text="{Binding GridSearch.SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="{Binding GridSearch.MatchCountDisplay}" VerticalAlignment="Center"
+                               Margin="8,0,8,0" MinWidth="60"
+                               Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+                    <Button Content="▲" Command="{Binding GridSearch.PreviousCommand}" ToolTip="Previous match (Shift+F3)" Padding="6,2" Margin="0,0,2,0" />
+                    <Button Content="▼" Command="{Binding GridSearch.NextCommand}" ToolTip="Next match (F3 / Enter)" Padding="6,2" Margin="0,0,6,0" />
+                    <Button Content="✕" Command="{Binding GridSearch.CloseCommand}" ToolTip="Close (Escape)" Padding="6,2" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

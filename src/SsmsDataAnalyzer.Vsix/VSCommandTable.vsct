@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!--
+    Tier B entry point only (per PLAN.md / the lead's brief): a top-level "Tools" menu
+    command that opens the Analyze Data tool window. The Object Explorer right-click
+    integration (Tier A) is Agent C's investigation and is deliberately NOT attempted here.
+  -->
+
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidSsmsDataAnalyzerPackage">
+    <Groups>
+      <Group guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
+
+      <!--
+        CONTRACT.md Amendment 16 / docs/resultsgrid-api.md: SSMS's OWN query results-grid
+        context menu IS a real VS ctmenu (the opposite of the Object Explorer finding above),
+        shown via IVsUIShell.ShowContextMenu(GUID_SQLEditorGroup, IDM_SQLWB_SQLRESGRID_CONTEXT).
+        Both read from SQLEditors.dll IL, not guessed — see docs/resultsgrid-api.md section 2.
+        Red Gate SQL Prompt 11's "Script as INSERT" / "Copy as IN clause" / "Open in Excel" /
+        "Show Aggregate Results" are registered exactly this way on this machine today, which
+        is the empirical proof this route works here.
+      -->
+      <Group guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" priority="0x0600">
+        <Parent guid="guidSqlEditorGroup" id="IDM_SQLWB_SQLRESGRID_CONTEXT" />
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidAnalyzeData" priority="0x0100" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
+        <Icon guid="guidImages" id="bmpAnalyzeData" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>Analyze Data...</ButtonText>
+          <LocCanonicalName>.SsmsDataAnalyzer.AnalyzeData</LocCanonicalName>
+        </Strings>
+      </Button>
+
+      <!--
+        Starts invisible (DefaultInvisible) — ResultsGridSourceCommand.OnBeforeQueryStatus is
+        the ONLY thing that ever makes it visible, and only when the right-click actually
+        landed on a results-grid data cell (CONTRACT.md Amendment 16's precondition gate).
+        TextChanges lets the handler swap the caption in; DynamicVisibility is required for
+        Visible to be toggled from BeforeQueryStatus at all.
+      -->
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidGoToSourceForValue" priority="0x0100" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings>
+          <ButtonText>Go to source for this value</ButtonText>
+          <LocCanonicalName>.SsmsDataAnalyzer.GoToSourceForValue</LocCanonicalName>
+        </Strings>
+      </Button>
+
+      <!--
+        User request: "Find... on right click in result grid of SSMS." Same visibility
+        pattern as cmdidGoToSourceForValue — ResultsGridFindCommand.OnBeforeQueryStatus shows
+        it whenever ANY results grid has focus (no per-cell gating needed; Find has no
+        base-table safety concerns to gate on).
+      -->
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidGridFind" priority="0x0110" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings>
+          <ButtonText>Find...</ButtonText>
+          <LocCanonicalName>.SsmsDataAnalyzer.GridFind</LocCanonicalName>
+        </Strings>
+      </Button>
+    </Buttons>
+
+    <Bitmaps>
+      <Bitmap guid="guidImages" href="Resources\DataAnalyzer.ico" usedList="bmpAnalyzeData" />
+    </Bitmaps>
+  </Commands>
+
+  <Symbols>
+    <!-- Keep numerically in sync with PackageGuids.cs / PackageIds.cs. -->
+    <GuidSymbol name="guidSsmsDataAnalyzerPackage" value="{b7e4f6a2-8f2f-4a7a-9e1a-3c7f7b8a9d10}" />
+
+    <GuidSymbol name="guidSsmsDataAnalyzerCommandSet" value="{e2d9f1c4-5b6a-4c8e-9a1b-7d6e2f3a8c55}">
+      <IDSymbol name="AnalyzeDataMenuGroup" value="0x1020" />
+      <IDSymbol name="cmdidAnalyzeData" value="0x0100" />
+      <IDSymbol name="ResultsGridMenuGroup" value="0x1040" />
+      <IDSymbol name="cmdidGoToSourceForValue" value="0x0200" />
+      <IDSymbol name="cmdidGridFind" value="0x0201" />
+    </GuidSymbol>
+
+    <!--
+      SSMS's own results-grid context menu group (SQLWorkbenchCommands.GUID_SQLEditorGroup /
+      IDM_SQLWB_SQLRESGRID_CONTEXT), read from SQLEditors.dll IL — see
+      docs/resultsgrid-api.md section 2. NOT ours; only referenced as a Parent above, never
+      used in C#.
+    -->
+    <GuidSymbol name="guidSqlEditorGroup" value="{33F13AC3-80BB-4ECB-85BC-225435603A5E}">
+      <IDSymbol name="IDM_SQLWB_SQLRESGRID_CONTEXT" value="0x0070" />
+    </GuidSymbol>
+
+    <GuidSymbol name="guidImages" value="{d3f2a1b0-6c9e-4d7a-8b1c-5e2f9a0d4c11}">
+      <IDSymbol name="bmpAnalyzeData" value="1" />
+    </GuidSymbol>
+  </Symbols>
+
+</CommandTable>

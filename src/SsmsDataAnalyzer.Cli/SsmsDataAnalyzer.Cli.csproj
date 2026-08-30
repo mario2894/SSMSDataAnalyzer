@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SsmsDataAnalyzer.Cli</RootNamespace>
+    <AssemblyName>ssmsanalyze</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- Microsoft.Data.SqlClient refuses to load under Globalization Invariant Mode. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SsmsDataAnalyzer.Core\SsmsDataAnalyzer.Core.csproj" />
+  </ItemGroup>
+
+</Project>

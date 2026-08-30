@@ -1,0 +1,38 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+
+# VSIX build artifacts.
+# NOTE: do NOT use a bare "*.vsix" pattern here. Git on Windows is case-insensitive,
+# so it also matches the src/SsmsDataAnalyzer.Vsix DIRECTORY and silently excludes the
+# entire extension project. bin/ and obj/ above already cover the built artifacts.
+**/bin/**/*.pkgdef
+**/obj/**/*.cto
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.sln.docstates
+
+# NuGet
+packages/
+*.nupkg
+project.lock.json
+project.assets.json
+
+# Test / coverage output
+TestResults/
+[Cc]overage*/
+*.trx
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local scratch — harnesses live in the session scratchpad, not the repo
+scratch/

@@ -1,0 +1,457 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VSPackage for SSMS 22 (Visual Studio 18.x shell, amd64, .NET Framework hosted).
+    See README-BUILD.md in this directory for prerequisites and the build/debug/install loop.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>SsmsDataAnalyzer.Vsix</RootNamespace>
+    <AssemblyName>SsmsDataAnalyzer.Vsix</AssemblyName>
+    <UseWpf>true</UseWpf>
+    <UseWindowsForms>false</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <Platforms>AnyCPU</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+
+    <!-- VSSDK / VSIX project behavior -->
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <UseCodebase>true</UseCodebase>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CopyOutputSymbolsToOutputDirectory>false</CopyOutputSymbolsToOutputDirectory>
+    <CreateVsixContainer>true</CreateVsixContainer>
+    <DeployExtension>false</DeployExtension>
+    <StartAction>Program</StartAction>
+
+    <!--
+      Debug target: launch SSMS 22 into the experimental hive. Update if your SSMS 22
+      install path differs. See README-BUILD.md for the full debug procedure.
+    -->
+    <StartProgram>C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe</StartProgram>
+    <StartArguments>/rootsuffix Exp</StartArguments>
+
+    <!-- Never copy SSMS's own assemblies into our output/VSIX; we run inside the host process. -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.1.0</Version>
+    <MinimumVisualStudioVersion>18.0</MinimumVisualStudioVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Path to the SSMS 22 IDE folder that hosts the assemblies we compile against
+      (ObjectExplorer.dll, SqlWorkbench.Interfaces.dll, etc). Overridable:
+        msbuild /p:SsmsIdeDir="D:\Other\Path\IDE"
+    -->
+    <SsmsIdeDir Condition="'$(SsmsIdeDir)' == ''">C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE</SsmsIdeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core is Agent A's project; referenced by path per CONTRACT.md even before it exists on disk. -->
+    <ProjectReference Include="..\SsmsDataAnalyzer.Core\SsmsDataAnalyzer.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!--
+      Single source of truth for the VSSDK.BuildTools version, so the PackageReference below
+      and the explicit targets Import near the end of this file (see the comment there —
+      Amendment 5 in CONTRACT.md) can never drift apart from a one-sided version bump.
+    -->
+    <VsSDKBuildToolsVersion>17.9.3168</VsSDKBuildToolsVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Visual Studio SDK (shell, package infrastructure, threading, tool windows). -->
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.0.32112.339" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="$(VsSDKBuildToolsVersion)">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.9.28" />
+    <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.9.37000" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      SSMS 22 host assemblies, referenced straight from the IDE install folder.
+      <Private>false</Private> is load-bearing: these DLLs must NEVER be copied into the
+      VSIX output — we run inside SSMS's own process, which already has them loaded, and
+      shipping a second copy causes type-identity / binding failures at best and silently
+      shadows a servicing update at worst.
+    -->
+    <Reference Include="Microsoft.SqlServer.Management.SqlStudio.ObjectExplorer">
+      <HintPath>$(SsmsIdeDir)\ObjectExplorer.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Management.SqlMgmt">
+      <HintPath>$(SsmsIdeDir)\sqlmgmt.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SqlWorkbench.Interfaces">
+      <HintPath>$(SsmsIdeDir)\SqlWorkbench.Interfaces.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Smo">
+      <HintPath>$(SsmsIdeDir)\Microsoft.SqlServer.Smo.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.ConnectionInfo">
+      <HintPath>$(SsmsIdeDir)\Microsoft.SqlServer.ConnectionInfo.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!--
+      Object Explorer integration (CONTRACT.md Amendment 13, Priority 1 / docs/oe-api.md).
+      Public API, undocumented/unsupported — compile-time references are correct per Agent
+      C's spike (no private reflection needed), guarded at the call site by a feature flag
+      and try/catch that degrades to Tier B.
+    -->
+    <Reference Include="Microsoft.SqlServer.Management.Sdk.SqlStudio">
+      <HintPath>$(SsmsIdeDir)\Microsoft.SqlServer.Management.Sdk.SqlStudio.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Management.Sdk.Sfc">
+      <HintPath>$(SsmsIdeDir)\Microsoft.SqlServer.Management.Sdk.Sfc.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!--
+      CONTRACT.md Amendment 14/15 "Go to source": ServiceCache.ScriptFactory
+      (SqlPackageBase.dll) opens a new query window; UIConnectionInfo (RegSvrEnum.dll) is
+      the connection descriptor its CreateNewScript overload expects. Same guarded,
+      undocumented-but-public pattern as the rest of Tier A.
+    -->
+    <Reference Include="SqlPackageBase">
+      <HintPath>$(SsmsIdeDir)\SqlPackageBase.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.RegSvrEnum">
+      <HintPath>$(SsmsIdeDir)\Microsoft.SqlServer.RegSvrEnum.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!--
+      CONTRACT.md Amendment 16 "Go to source" in SSMS's OWN query results grid
+      (docs/resultsgrid-api.md, Agent C's second spike). SqlEditors.dll carries the public
+      IGridResultSet / SqlScriptEditorControl / ScriptAndResultsEditorControl surface;
+      Microsoft.SqlServer.GridControl.dll carries the public GridControl/HitTestInfo the
+      grid itself is built from. Both public, undocumented, no reflection needed for either
+      (unlike the Object Explorer menu) per the spike's IL-verified findings.
+    -->
+    <Reference Include="SqlEditors">
+      <HintPath>$(SsmsIdeDir)\Extensions\Application\SQLEditors.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.GridControl">
+      <HintPath>$(SsmsIdeDir)\Microsoft.SqlServer.GridControl.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!--
+      SQLEditors.dll (above) was built against Microsoft.VisualStudio.Interop 18.0.0.0 — SSMS
+      22 is a VS 18.x shell — while the VS SDK NuGet package pulls in the 17.0.0.0 copy,
+      which CSC rejects outright (CS1705, "higher version than referenced assembly") rather
+      than silently binding down. SpecificVersion=false + this HintPath makes the compiler use
+      SSMS's own v18 copy instead, exactly like every other SsmsHostOwnedAssembly here.
+    -->
+    <Reference Include="Microsoft.VisualStudio.Interop, Version=18.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+      <HintPath>$(SsmsIdeDir)\PublicAssemblies\Microsoft.VisualStudio.Interop.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>true</SpecificVersion>
+    </Reference>
+
+    <!--
+      "Go to source" query-window fix (root-causing the silent CreateNewScript failure):
+      EnvDTE.DTE is the fallback route when ServiceCache.ScriptFactory resolves to null
+      (confirmed by IL: ServiceCache.get_ScriptFactory -> GetService<T> ->
+      Package.GetGlobalService(typeof(IScriptFactory)), which can return null with no
+      exception if IScriptFactory was never registered as a VS-wide global service -
+      see DataAnalyzerPackage.TryOpenNewQueryWindowAsync). SSMS ships its own re-versioned
+      EnvDTE PIA at 18.0.0.0, same VS-18-shell story as Interop above.
+    -->
+    <Reference Include="envdte, Version=18.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+      <HintPath>$(SsmsIdeDir)\PublicAssemblies\envdte.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>true</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
+    <VSCTCompile Include="VSCommandTable.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+    <Content Include="Resources\DataAnalyzer.ico">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SDK-style projects auto-include .resx under EmbeddedResource; override the
+         logical/manifest name it picks so [InstalledProductRegistration] finds "VSPackage". -->
+    <EmbeddedResource Update="VSPackage.resx">
+      <LogicalName>VSPackage.resources</LogicalName>
+      <ManifestResourceName>VSPackage</ManifestResourceName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Page Update="ToolWindow\ProfileView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Update="ToolWindow\ProfileView.xaml.cs">
+      <DependentUpon>ProfileView.xaml</DependentUpon>
+    </Compile>
+    <Page Update="ResultsGrid\GridFindView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Update="ResultsGrid\GridFindView.xaml.cs">
+      <DependentUpon>GridFindView.xaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Every file this project expects to find under $(SsmsIdeDir), kept in one list so
+      CheckSsmsIdeDirReferences (below) and the actual <Reference HintPath> items above
+      can't silently drift apart. If you add a new SSMS-assembly Reference, add its path
+      here too.
+    -->
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\ObjectExplorer.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\sqlmgmt.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\SqlWorkbench.Interfaces.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.Smo.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.ConnectionInfo.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.Management.Sdk.SqlStudio.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.Management.Sdk.Sfc.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\SqlPackageBase.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.RegSvrEnum.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Extensions\Application\SQLEditors.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.GridControl.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\PublicAssemblies\Microsoft.VisualStudio.Interop.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\PublicAssemblies\envdte.dll" />
+  </ItemGroup>
+
+  <Target Name="CheckSsmsIdeDirReferences" BeforeTargets="ResolveAssemblyReferences;ResolveReferences;CoreCompile">
+    <!--
+      Fails fast with a file-by-file message instead of letting a wrong/missing
+      $(SsmsIdeDir) surface as a cascade of "type or namespace not found" CS errors deep
+      in unrelated .cs files. Point at the real SSMS 22 IDE folder if this fires, e.g.:
+        msbuild /p:SsmsIdeDir="D:\Other\Path\IDE"
+    -->
+    <ItemGroup>
+      <_SsmsIdeDirMissingFile Include="@(SsmsIdeDirExpectedFile)" Condition="!Exists('%(SsmsIdeDirExpectedFile.Identity)')" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_SsmsIdeDirMissingFile)' != ''"
+      Text="SsmsIdeDir ('$(SsmsIdeDir)') is missing expected file(s):%0A@(_SsmsIdeDirMissingFile, '%0A')%0A%0AThis usually means $(SsmsIdeDir) points at the wrong folder, or your SSMS 22 install differs from the default path. Override it: msbuild /p:SsmsIdeDir=&quot;D:\Path\To\SSMS22\Common7\IDE&quot;" />
+  </Target>
+
+  <!--
+    CONTRACT.md Amendment 5: Microsoft.VSSDK.BuildTools' auto-imported
+    build/Microsoft.VSSDK.BuildTools.targets is only 18 lines that set VsSDKToolsPath and
+    friends — it carries no packaging logic. The real VSCT-compile / pkgdef-generation /
+    VSIX-container targets ship in the same package at tools/vssdk/Microsoft.VsSDK.targets.
+    A legacy (non-SDK-style) VSIX project reaches them via
+    $(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets, which resolves into the Visual Studio
+    install and therefore needs the "extension development" workload. This is an SDK-style
+    project with that workload NOT installed, so we import the NuGet-provided copy directly
+    instead. Verified (lead spike + this project): with this import, VSCommandTable.cto,
+    the .pkgdef, and the .vsix container are all produced without the workload present.
+  -->
+  <PropertyGroup>
+    <VsSDKTargetsPath>$(NuGetPackageRoot)microsoft.vssdk.buildtools\$(VsSDKBuildToolsVersion)\tools\vssdk\Microsoft.VsSDK.targets</VsSDKTargetsPath>
+  </PropertyGroup>
+
+  <!--
+    VSSDK1207 fix (Amendment 5 follow-up): explicit content in an SDK-style project file is
+    evaluated BEFORE the implicit trailing import of Microsoft.NET.Sdk's own targets, which
+    is where $(IntermediateOutputPath) normally gets its real value
+    ($(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\ — e.g. obj\Debug\net472\).
+    Our explicit <Import> of Microsoft.VsSDK.targets above therefore sees an *empty*
+    $(IntermediateOutputPath) when it sets <ResourceManifest>$(IntermediateOutputPath)\resources.json</ResourceManifest>,
+    which resolves to the drive root (observed: "C:\resources.json", access denied). Compute
+    the same default explicitly, ahead of the import, so it matches what the rest of the
+    build already uses (verified against the real obj\Debug\net472\ folder this project
+    produces).
+  -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">obj\</BaseIntermediateOutputPath>
+    <!--
+      Deliberately NOT appending $(TargetFramework) here: the SDK's own later, unconditional
+      "append the target framework to the intermediate path" step (which runs regardless of
+      whether IntermediateOutputPath already has a value) would append it a second time on
+      top of ours, producing a broken double-nested obj\Debug\net472\net472\ path — which is
+      exactly what caused GeneratePkgDef/CopyPkgDef to fail looking for the .pkgdef in the
+      wrong place. Leaving the framework segment out here lets the SDK add it exactly once,
+      matching the obj\Debug\net472\ path the rest of the build already uses.
+    -->
+    <IntermediateOutputPath Condition="'$(IntermediateOutputPath)' == ''">$(BaseIntermediateOutputPath)$(Configuration)\</IntermediateOutputPath>
+  </PropertyGroup>
+
+  <Import Project="$(VsSDKTargetsPath)" Condition="Exists('$(VsSDKTargetsPath)')" />
+
+  <!--
+    Second VSSDK1207-class fix: Microsoft.VsSDK.targets appends GeneratePkgDef;CopyPkgDef;
+    CreateVsixContainer;DeployVsixExtensionFiles;CopyVsixManifestFile;CopyVsixExtensionFiles
+    to $(PrepareForRunDependsOn) — but it does so above, before the SDK's own
+    Microsoft.Common.CurrentVersion.targets is imported (implicitly, at the very end of an
+    SDK-style project). That file sets
+      <PrepareForRunDependsOn>CopyFilesToOutputDirectory</PrepareForRunDependsOn>
+    as a flat overwrite (no "$(PrepareForRunDependsOn);" prefix), which silently discards
+    everything VsSDK.targets added. Result: Build succeeds, produces the assembly, and
+    stops — no .pkgdef, no .vsix, no error, because the targets that build them are never
+    invoked. Rather than fight property-append ordering across two out-of-order imports
+    again, hook a target explicitly instead: AfterTargets is resolved by name at build time,
+    not by property value, so it isn't vulnerable to being clobbered the same way.
+  -->
+  <Target Name="SsmsDataAnalyzerVsixPackaging" AfterTargets="PrepareForRun"
+          DependsOnTargets="GeneratePkgDef;CopyPkgDef;CreateVsixContainer;DeployVsixExtensionFiles;CopyVsixManifestFile;CopyVsixExtensionFiles" />
+
+  <!--
+    Third VSSDK1207-family fix, same root cause: Microsoft.VsSDK.targets sets
+      <CreatePkgDefAssemblyToProcess Condition="'$(CreatePkgDefAssemblyToProcess)' == ''">$(TargetPath)</CreatePkgDefAssemblyToProcess>
+    in a *static* (outside-any-Target) PropertyGroup, evaluated during MSBuild's single
+    top-to-bottom static-evaluation pass across the whole expanded project — which happens
+    before ANY target runs, but in document order, and our explicit VsSDK.targets Import
+    sits before the SDK's own trailing import that gives $(TargetPath) its real value. So
+    this locks in as "" and GeneratePkgDef silently produces no file (MSB3030 later, trying
+    to copy it).
+    A static PropertyGroup fix (like the two above) doesn't work here because we can't
+    accurately guess $(TargetPath) ahead of the SDK computing it. Instead, use a
+    Target-scoped (dynamic) PropertyGroup: everything inside a <Target> is evaluated at
+    execution time, by which point the whole document's static pass — including the SDK's
+    real $(TargetPath) — has already completed, regardless of import order.
+  -->
+  <Target Name="SsmsDataAnalyzerFixPkgDefAssemblyPath" BeforeTargets="GeneratePkgDef">
+    <PropertyGroup>
+      <CreatePkgDefAssemblyToProcess>$(TargetPath)</CreatePkgDefAssemblyToProcess>
+    </PropertyGroup>
+  </Target>
+
+  <!--
+    Fourth instance of the same root cause: TargetVsixContainerName ("$(TargetName).vsix")
+    and TargetVsixContainer ("$(OutDir)$(TargetVsixContainerName)") are also set in VsSDK.targets'
+    early static PropertyGroup, before $(TargetName)/$(OutDir) have their real values — so
+    without this fix the container gets written to the project root as a bare ".vsix" (no
+    name, no bin\ path). Same dynamic-target-scoped-property fix as GeneratePkgDef above.
+  -->
+  <Target Name="SsmsDataAnalyzerFixVsixContainerPath" BeforeTargets="CreateVsixContainer">
+    <PropertyGroup>
+      <TargetVsixContainerName>$(TargetName).vsix</TargetVsixContainerName>
+      <TargetVsixContainer>$(OutDir)$(TargetVsixContainerName)</TargetVsixContainer>
+    </PropertyGroup>
+  </Target>
+
+  <!--
+    CONTRACT.md Amendment 7: SSMS 22 already ships Microsoft.Data.SqlClient.dll (and its
+    SNI natives) in its IDE root, at assembly version 6.0.0.0 (FileVersion 6.15.26114.3 /
+    ProductVersion 6.1.5) — a different major version than the 5.0.0.0 (5.2.2) Core compiles
+    against. Loading a second copy into SSMS's process is exactly the type-identity hazard
+    <Private>false</Private> already guards against for every direct SSMS reference above;
+    it just wasn't applied to the whole data-access stack that arrives *transitively*
+    through Core's ProjectReference (Core -> Microsoft.Data.SqlClient -> Azure.Identity ->
+    Microsoft.Identity.Client -> Microsoft.IdentityModel.* -> ...).
+
+    This list is the actual payload observed by unzipping a built .vsix (per the lead's
+    instruction to check the real dependency graph, not assume one) plus the SNI natives,
+    which the build doesn't currently even copy into the container but are included here
+    defensively since Amendment 7 says "ship neither".
+
+    Every name below was individually confirmed present somewhere SSMS 22 actually loads
+    from: most are directly in $(SsmsIdeDir); Microsoft.Extensions.DependencyInjection
+    .Abstractions/Logging.Abstractions/Options/Primitives live in
+    $(SsmsIdeDir)\PublicAssemblies, and System.Formats.Asn1 lives in
+    $(SsmsIdeDir)\PrivateAssemblies — both of which Ssms.exe.config declares as binding
+    probing paths (<probing privatePath="PublicAssemblies;PrivateAssemblies;..."/>), so the
+    CLR finds them there without us shipping a copy or needing a redirect for them.
+    (Agent A pinned Core's Microsoft.Data.SqlClient to 6.1.5 — an exact match with the host's
+    6.1.5/6.0.0.0 — which is what pulled in this Extensions/Asn1 set; it wasn't present when
+    Core still compiled against 5.2.2.)
+  -->
+  <ItemGroup>
+    <SsmsHostOwnedAssembly Include="Microsoft.Data.SqlClient.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Data.SqlClient.resources.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Data.SqlClient.SNI.x64.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Data.SqlClient.SNI.x86.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Data.SqlClient.SNI.arm64.dll" />
+    <SsmsHostOwnedAssembly Include="Azure.Core.dll" />
+    <SsmsHostOwnedAssembly Include="Azure.Identity.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Identity.Client.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Identity.Client.Extensions.Msal.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IdentityModel.Abstractions.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IdentityModel.JsonWebTokens.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IdentityModel.Logging.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IdentityModel.Protocols.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IdentityModel.Protocols.OpenIdConnect.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IdentityModel.Tokens.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.IO.Redist.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.NET.StringTools.dll" />
+    <SsmsHostOwnedAssembly Include="System.ClientModel.dll" />
+    <SsmsHostOwnedAssembly Include="System.Configuration.ConfigurationManager.dll" />
+    <SsmsHostOwnedAssembly Include="System.IdentityModel.Tokens.Jwt.dll" />
+    <SsmsHostOwnedAssembly Include="System.IO.FileSystem.AccessControl.dll" />
+    <SsmsHostOwnedAssembly Include="System.Memory.Data.dll" />
+    <SsmsHostOwnedAssembly Include="System.Security.Cryptography.ProtectedData.dll" />
+    <SsmsHostOwnedAssembly Include="System.Security.Permissions.dll" />
+    <SsmsHostOwnedAssembly Include="System.Text.Encodings.Web.dll" />
+    <SsmsHostOwnedAssembly Include="System.Text.Json.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Extensions.Caching.Abstractions.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Extensions.Caching.Memory.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Extensions.Logging.Abstractions.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Extensions.Options.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.Extensions.Primitives.dll" />
+    <SsmsHostOwnedAssembly Include="System.Formats.Asn1.dll" />
+    <SsmsHostOwnedAssembly Include="System.Security.Cryptography.Pkcs.dll" />
+  </ItemGroup>
+
+  <!--
+    Microsoft.VsSDK.targets already has a large built-in <SuppressFromVsix> list (the entire
+    VS/MEF/Shell stack — Microsoft.VisualStudio.*, Newtonsoft.Json, StreamJsonRpc, etc.),
+    which is exactly why none of that stack showed up in our earlier unzip: Item lists
+    accumulate across the whole expanded project regardless of physical import order (unlike
+    the static-PropertyGroup ordering traps fixed above), so simply adding our own
+    <SuppressFromVsix> entries here merges cleanly with VsSDK.targets' own list. This affects
+    both the .vsix container and CopyVsixExtensionFiles/DeployVsixExtensionFiles (experimental
+    F5 deployment), since both are built from the same suppression-filtered @(VSIXSourceItem).
+    It does NOT affect bin\Debug\net472\ — that stays a normal build output usable for local
+    testing / possible CLI reuse, which is correct: only the packaged/deployed VSIX must
+    avoid shipping the host's own assemblies.
+  -->
+  <ItemGroup>
+    <SuppressFromVsix Include="@(SsmsHostOwnedAssembly)" />
+  </ItemGroup>
+
+  <!--
+    Guard against a future transitive dependency silently re-entering the package (the
+    SuppressFromVsix list above only helps if someone remembers to keep it in sync) — same
+    spirit as CheckSsmsIdeDirReferences. Rather than re-check the enumerated name list (which
+    a NEW, never-before-seen dependency wouldn't be on), this asserts against the *families*
+    Amendment 7 identifies as host-owned, by pattern, over the FINAL (post-suppression)
+    @(VSIXSourceItem) list that actually feeds the .vsix container — so it also catches the
+    suppression list itself being edited incorrectly, not just a new dependency.
+  -->
+  <PropertyGroup>
+    <SsmsHostOwnedAssemblyPattern>^(Microsoft\.Data\.SqlClient(\..+)?|Azure\..+|Microsoft\.Identity\.Client(\..+)?|Microsoft\.IdentityModel\..+|System\.IdentityModel\..+|System\.ClientModel|System\.Text\.Json|System\.Memory\.Data|System\.Configuration\.ConfigurationManager|System\.Security\.Cryptography\.ProtectedData|System\.Security\.Cryptography\.Pkcs|System\.Security\.Permissions|System\.Text\.Encodings\.Web|Microsoft\.IO\.Redist|Microsoft\.NET\.StringTools|Microsoft\.Extensions\..+|System\.Formats\.Asn1)\.dll$</SsmsHostOwnedAssemblyPattern>
+  </PropertyGroup>
+
+  <Target Name="SsmsDataAnalyzerAssertNoHostOwnedAssembliesInVsix" AfterTargets="GetVsixSourceItems">
+    <ItemGroup>
+      <_VsixLeakedHostAssembly Include="@(VSIXSourceItem)"
+          Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(VSIXSourceItem.Filename)%(VSIXSourceItem.Extension)', '$(SsmsHostOwnedAssemblyPattern)', System.Text.RegularExpressions.RegexOptions.IgnoreCase))" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_VsixLeakedHostAssembly)' != ''"
+      Text="CONTRACT.md Amendment 7 violation: these files are about to be packaged into the .vsix, but they belong to a family SSMS 22 already ships and must be referenced, never shipped: @(_VsixLeakedHostAssembly, ', '). If this is a genuinely new transitive dependency (e.g. from a Core package bump), add it to the SsmsHostOwnedAssembly item list above (with a matching SuppressFromVsix entry) after confirming SSMS 22 actually provides it and adding/adjusting the ProvideBindingRedirection on DataAnalyzerPackage if its version differs." />
+  </Target>
+
+</Project>

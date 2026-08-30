@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SsmsDataAnalyzer.Tests</RootNamespace>
+    <AssemblyName>SsmsDataAnalyzer.Tests</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!--
+      No direct Microsoft.Data.SqlClient reference: this project has no reason to pin the
+      data-access client independently of the thing it's testing. Inherit whatever version
+      Core references transitively (CONTRACT.md Amendment 9 — currently 6.1.5, the exact
+      version SSMS 22 hosts) so there is exactly one place that version is decided, and an
+      independent pin here can never NU1605-downgrade-conflict with Core's again.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Core is netstandard2.0 and owned by Agent A, built concurrently against the same
+      CONTRACT.md this test project codes against. If Core is missing files or doesn't yet
+      compile, this project won't build either; that is expected per the team brief. The
+      test source is still complete and correct against the frozen contract shapes.
+    -->
+    <ProjectReference Include="..\..\src\SsmsDataAnalyzer.Core\SsmsDataAnalyzer.Core.csproj" />
+  </ItemGroup>
+
+</Project>

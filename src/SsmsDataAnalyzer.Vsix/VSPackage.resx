@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    Standard VSPackage string-resource table. Consumed by [InstalledProductRegistration]
+    on DataAnalyzerPackage via "#110" (name) / "#112" (description) and by the tool
+    window / command registrations via their own numeric IDs. Must be compiled as an
+    embedded resource named "VSPackage" (the default for a file with this name).
+  -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="0" />
+              <xsd:attribute name="type" type="xsd:string" use="optional" />
+              <xsd:attribute name="mimetype" type="xsd:string" use="optional" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="110" xml:space="preserve">
+    <value>SSMS Data Analyzer</value>
+  </data>
+  <data name="112" xml:space="preserve">
+    <value>Per-column table profiling (fill rate, exact distinct counts, last-fill date) for SQL Server Management Studio.</value>
+  </data>
+  <data name="113" xml:space="preserve">
+    <value>Profile the selected table's columns for fill rate, exact distinct counts, and last-fill date.</value>
+  </data>
+  <data name="ProfileToolWindowCaption" xml:space="preserve">
+    <value>Analyze Data</value>
+  </data>
+</root>

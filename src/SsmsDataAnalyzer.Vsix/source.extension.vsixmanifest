@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Id="SsmsDataAnalyzer.6f2b6e2a-6c2a-4e3a-9c9a-2f6b0c8a1a4d" Version="0.7.2" Language="en-US" Publisher="SsmsDataAnalyzer" />
+    <DisplayName>SSMS Data Analyzer</DisplayName>
+    <Description xml:space="preserve">Per-column data profiling for SQL Server tables: fill rate, exact distinct counts, last-fill date, min/max and flags, directly inside SQL Server Management Studio.</Description>
+    <MoreInfo>https://github.com/</MoreInfo>
+    <!--
+      No <License> element yet: this scaffold has no real EULA, and README-BUILD.md (build
+      instructions, not licensing terms) was a placeholder that also isn't packaged into the
+      VSIX, which VSSDK1310 correctly rejected ("license... missing from the file list").
+      Add a real license file under this project directory and include it as
+      <Content Include="..." IncludeInVSIX="true"> before setting <License> again for release.
+    -->
+    <Icon>Resources\DataAnalyzer.ico</Icon>
+    <Tags>SQL Server, SSMS, Data Profiling, Data Analysis, Distinct Count</Tags>
+  </Metadata>
+
+  <Installation>
+    <!--
+      Pinned to SSMS 22 only, per CONTRACT.md and PLAN.md. Verified against
+      Extensions\Application\extension.vsixmanifest (SSMS's own self-declared
+      InstallationTarget Id) inside the SSMS 22 IDE folder. Do not widen this range and
+      do not add a VS-generic InstallationTarget — this extension is SSMS-22-exclusive
+      by design (no compatibility shims, no older-shell branches).
+    -->
+    <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[22.0,)">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.7.2,)" />
+  </Dependencies>
+
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[16.1.28811.260,30.0)" DisplayName="Visual Studio core editor" />
+  </Prerequisites>
+
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+  </Assets>
+</PackageManifest>

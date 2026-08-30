@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>SsmsDataAnalyzer.Core</RootNamespace>
+    <AssemblyName>SsmsDataAnalyzer.Core</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Pinned to 6.1.5 to match the Microsoft.Data.SqlClient that SSMS 22 ships in its IDE root
+      (FileVersion 6.15.26114.3, ProductVersion 6.1.5, AssemblyVersion 6.0.0.0) — see CONTRACT
+      Amendment 7. Core is compiled once and executed in two hosts: the net8 CLI process and the
+      net472 VSIX inside SSMS. Matching the host version means the VSIX needs no binding redirect
+      and the CLI exercises the same client the extension does.
+
+      Do NOT bump this ahead of the SSMS host. MDS keeps AssemblyVersion at major.0.0.0, so any
+      6.x host binds without a redirect, but a move to 7.x would reintroduce the version skew.
+    -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.5" />
+  </ItemGroup>
+
+</Project>
