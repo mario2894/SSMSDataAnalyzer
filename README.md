@@ -16,14 +16,39 @@ Useful if you need to answer questions like:
 
 ## Installing it
 
-1. **Close SSMS** if it's open.
-2. Double-click `SsmsDataAnalyzer.Vsix.vsix`, or run:
-   ```
-   "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" SsmsDataAnalyzer.Vsix.vsix
-   ```
-3. Click through the installer, then **open SSMS again**.
+**You don't need to build anything.** The ready-to-install file is in this repository.
 
-Requires **SSMS 22**. It won't install on older versions.
+1. Open the **[`dist`](dist)** folder above → click **`SsmsDataAnalyzer.vsix`** →
+   click the **Download** button (or the ⤓ icon) to save it.
+2. **Close SSMS** if it's open. *(The installer can't replace files while SSMS is running.)*
+3. **Double-click the downloaded file** and click through the installer.
+4. **Open SSMS again.**
+
+That's it — you'll find **Analyze Data…** when you right-click a table.
+
+Requires **SSMS 22**. It will not install on SSMS 21 or older, or on Visual Studio.
+
+<details>
+<summary>If double-clicking doesn't work</summary>
+
+Run this instead, replacing the path at the end with wherever you saved the file:
+
+```
+"C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" "%USERPROFILE%\Downloads\SsmsDataAnalyzer.vsix"
+```
+
+To remove it:
+
+```
+"C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe" /uninstall:SsmsDataAnalyzer.6f2b6e2a-6c2a-4e3a-9c9a-2f6b0c8a1a4d
+```
+</details>
+
+### Updating to a newer version
+
+Same steps — download the new file and install over the top. No need to uninstall first.
+To check which version you have: **Help → About** in SSMS, or look at the version noted in
+[`dist/VERSION.md`](dist/VERSION.md).
 
 ---
 
