@@ -794,3 +794,51 @@ treat as unverified until a follow-up spike exercises it.
 
 Two things C explicitly could not verify: Red Gate's exact group placement (their CFCT command
 table is compressed), and the brokered services' RPC behaviour.
+
+## Amendment 17 — supersedes Amendment 16's gates 1 and 2
+
+Two field reports showed Amendment 16's gating was too blunt and made the results-grid
+"Go to source" unavailable for most realistic queries:
+
+1. **`USE db / GO / SELECT`** — we described the whole editor text, so
+   `sys.dm_exec_describe_first_result_set` described the *first* result set, which is not the one
+   the user clicked. Shape mismatch, decline.
+2. **Two result grids in one tab** — gate 2 ("tab holds exactly one grid") removed the menu item
+   entirely. The user's case was two near-identical SELECTs differing only in a `WHERE` value,
+   which is an ordinary way to compare two states.
+
+**The gates were answering the wrong question.** What the feature needs is not *"which grid is
+this?"* but *"what is the source table and column for the column that was clicked?"* Grid-counting
+was a crude proxy for certainty. The precise test is agreement.
+
+**Gates 1 and 2 are removed and replaced by:**
+
+- Describe the text SSMS actually executed: the **selection** when there is one, else the full
+  buffer (SSMS's own rule), split into batches on `GO`.
+- Keep every batch whose described shape matches the clicked grid's **full** column set — count
+  and all names, not just the clicked column.
+- **If every surviving candidate agrees on the clicked column's source (database, schema, table,
+  column), proceed. If they disagree, decline and name the conflict.**
+
+This is stronger than what it replaces, not weaker. Two identical-shape SELECTs over the same
+tables resolve a given column to the same source, so which grid was clicked is irrelevant — the
+answer is identical. And if two shape-matching batches pull that column from *different* tables,
+they disagree and we decline: the actual wrong-table risk, now detected directly rather than by
+proxy.
+
+Gates 3 (describe error rows), 4 (shape match) and 5 (name match) are unchanged and now run per
+candidate batch.
+
+**Batch splitting must be lexed, not pattern-matched.** `GO` is only a separator when it stands
+alone on a line in normal lexer state — not inside `'...'` strings, `[...]`/`"..."` identifiers,
+`--` line comments, or `/* */` block comments, **which nest in T-SQL**. Agent B implemented a
+single-pass lexer and demonstrated a case where a non-nesting scanner yields 3 batches where the
+correct answer is 2. A regex here would silently corrupt queries.
+
+**Visibility requirements:** when several batches match and agree, the success message says so
+("resolved via N matching batches, all agreeing on this source") rather than appearing magic.
+When they disagree, the decline names both conflicting sources — that is useful information about
+the user's own query, not merely a refusal.
+
+**Same principle as Amendment 15's composite-FK ruling:** identify what genuinely makes the answer
+ambiguous and gate on that, rather than on a proxy that also blocks unambiguous cases.

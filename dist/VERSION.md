@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.7.3**
+**`SsmsDataAnalyzer.vsix` — version 0.7.4**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -20,6 +20,8 @@ Requires **SSMS 22**.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.7.4** — "Go to source" now works with multi-statement queries (`USE ... GO ... SELECT`), with a selection, and when a tab shows more than one result grid.
 
 **0.7.3** — Find in Results moved into a proper dockable panel; F3 / Shift+F3 now work there;
 fixed the panel's layout.

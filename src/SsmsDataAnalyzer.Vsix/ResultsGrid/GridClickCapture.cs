@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Data;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -23,6 +23,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         public object Value;
         public DataRow SchemaRow;
         public int NumberOfDataColumns;
+        /// <summary>Every data column's name, in grid order (index 0 = grid column 1) —
+        /// needed to full-shape-match a described batch against the WHOLE grid, not just the
+        /// clicked column (v0.7.4, see ResultsGridGoToSourceResolver).</summary>
+        public string[] AllColumnNames;
         public SqlScriptEditorControl Editor;
     }
 
@@ -31,13 +35,16 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// here is public (no reflection into internal SSMS types) — see the doc's confirmation
     /// that GridControl/IGridControl/IGridResultSet/SqlScriptEditorControl are all public.
     ///
-    /// Gates 1+2 ("grid index 0 in its tab" / "tab holds exactly one grid") are implemented by
-    /// counting <see cref="GridControl"/> descendants of the nearest enclosing WinForms
-    /// TabPage, rather than reflecting into the internal GridResultsTabPage/m_gridContainers
-    /// SSMS uses internally — TabPage and Control.Controls are both plain BCL/public-API,
-    /// so this stays robust across SSMS servicing updates that might rename or restructure
-    /// those internal fields (the exact kind of drift the tool-window "Go to source" bug hunt
-    /// showed can happen silently).
+    /// v0.7.4 amendment (supersedes Amendment 16's original gates 1+2): this class no longer
+    /// checks how many result grids share the clicked grid's tab. A user's ordinary "two
+    /// near-identical SELECTs, differing only in a WHERE value, run together" script has two
+    /// grids in one tab and was being refused entirely — the original "tab holds exactly one
+    /// grid" rule was a proxy for "we can't tell which query produced this," but HitTest
+    /// already answers that precisely regardless of how many sibling grids exist. The real
+    /// safety property (never resolve to the wrong table) is now enforced downstream, in
+    /// ResultsGridGoToSourceResolver, by describing every GO-separated batch and requiring
+    /// every shape-matching candidate to agree on the clicked column's actual source — a
+    /// direct test of what makes an answer ambiguous, not a same-tab-count proxy for it.
     /// </summary>
     internal static class GridClickCapture
     {
@@ -98,28 +105,17 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                     return false;
                 }
 
-                // Gates 1+2: the tab this grid lives in must hold exactly this one grid.
-                Control tabCursor = focused;
-                TabPage tabPage = null;
-                while (tabCursor != null)
-                {
-                    if (tabCursor is TabPage tp) { tabPage = tp; break; }
-                    tabCursor = tabCursor.Parent;
-                }
-                if (tabPage == null)
-                {
-                    declineReason = "couldn't locate the results tab";
-                    return false;
-                }
-
-                var gridsInTab = new List<GridControl>();
-                CollectDescendants(tabPage, gridsInTab);
-                if (gridsInTab.Count != 1 || !ReferenceEquals(gridsInTab[0], focused))
-                {
-                    declineReason = "this tab holds more than one result grid — can't tell which query produced it";
-                    return false;
-                }
-
+                // v0.7.4 amendment (lead's ruling, supersedes Amendment 16's original gates
+                // 1+2): NOT checked anymore whether this grid is alone in its tab. HitTest
+                // above already identifies the CLICKED grid precisely and unambiguously —
+                // "which grid is this" was never actually in doubt, multiple grids or not.
+                // The real question ("what is the source table/column for the clicked
+                // column") is answered downstream by describing every candidate batch and
+                // requiring them to AGREE on that answer (ResultsGridGoToSourceResolver) —
+                // a direct test of the thing that actually makes an answer ambiguous, rather
+                // than a same-tab-grid-count proxy that also blocked the completely ordinary
+                // case of two near-identical SELECTs (e.g. differing only in a WHERE value)
+                // in one script.
                 Control editorCursor = focused;
                 SqlScriptEditorControl editor = null;
                 while (editorCursor != null)
@@ -139,6 +135,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                     Row = hit.RowIndex,
                     GridCol = hit.ColumnIndex,
                     ColumnName = rs.ColumnNames[dataIndex],
+                    AllColumnNames = ToArray(rs.ColumnNames),
                     Value = rs.GetCellData(hit.RowIndex, hit.ColumnIndex), // NOTE: grid index
                     SchemaRow = rs.GetSchemaRow(dataIndex),                // NOTE: data index
                     NumberOfDataColumns = rs.NumberOfDataColumns,
@@ -155,13 +152,15 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             }
         }
 
-        private static void CollectDescendants(Control root, List<GridControl> into)
+        /// <summary><see cref="IGridResultSet.ColumnNames"/> is a <see cref="StringCollection"/>
+        /// (decompilation-verified — not a string[]), so a defensive copy needs an explicit
+        /// loop rather than a cast off ICloneable.Clone() (which returns another
+        /// StringCollection, not a string[]).</summary>
+        private static string[] ToArray(StringCollection names)
         {
-            foreach (Control child in root.Controls)
-            {
-                if (child is GridControl gc) into.Add(gc);
-                CollectDescendants(child, into);
-            }
+            var array = new string[names.Count];
+            names.CopyTo(array, 0);
+            return array;
         }
     }
 }

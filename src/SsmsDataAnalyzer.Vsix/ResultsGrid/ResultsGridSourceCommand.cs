@@ -1,7 +1,9 @@
 using System;
 using System.ComponentModel.Design;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.SqlServer.Management.UI.VSIntegration.Editors;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
@@ -142,7 +144,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 var ci = cell.Editor?.Connection;
                 if (ci == null) { await ShowStatusAsync("Go to source: no connection available for this editor."); return; }
 
-                string tsql = cell.Editor.EditorText;
+                string tsql = GetSelectionOrFullText(cell.Editor);
 
                 if (!GridConnectionInfo.TryBuild(ci, null, out var editorConnectionString))
                 {
@@ -155,6 +157,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                     EditorConnectionString = editorConnectionString,
                     EditorText = tsql,
                     GridColumnOrdinal = cell.GridCol,
+                    GridColumnNames = cell.AllColumnNames,
                     GridColumnName = cell.ColumnName,
                     CellValue = cell.Value,
                     NumberOfDataColumns = cell.NumberOfDataColumns,
@@ -193,6 +196,38 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// through it so nothing about this command can ever look like a click that did
         /// nothing.
         /// </summary>
+        /// <summary>
+        /// v0.7.4 field report ("USE db / GO / SELECT ..." almost always declined): SSMS runs
+        /// only the SELECTED text when there is a selection, not the whole editor buffer —
+        /// describing the whole buffer when the user had selected (or was about to run) just
+        /// one statement out of several is exactly why gate 4/5 kept declining.
+        ///
+        /// Decompilation of SQLEditors.dll (spikes/OeProbe) found the fix does not need to be
+        /// built by hand: ScriptEditorControl (SqlScriptEditorControl's base) has an INTERNAL
+        /// <c>GetCurrentlySelectedText()</c> that is a one-line forward to
+        /// ShellCodeWindowControl.SelectedText, whose IL already implements exactly "selection
+        /// if non-empty, else the ENTIRE buffer text" — i.e. SSMS's own selection-or-full-text
+        /// fallback, not something this project needs to reimplement or get subtly wrong.
+        /// Reached via reflection (established pattern — see DataAnalyzerPackage's OnExecScript
+        /// call) since it's internal; on any failure this degrades to the old always-whole-text
+        /// behaviour rather than failing the command outright — worse selection fidelity, not
+        /// a broken feature, if a future SSMS servicing update renames or removes it.
+        /// </summary>
+        private static string GetSelectionOrFullText(SqlScriptEditorControl editor)
+        {
+            try
+            {
+                var method = typeof(ScriptEditorControl).GetMethod("GetCurrentlySelectedText", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (method != null && method.Invoke(editor, null) is string text && !string.IsNullOrEmpty(text))
+                    return text;
+            }
+            catch (Exception ex)
+            {
+                OeDiagnostics.Warn("Results-grid 'Go to source': could not read the editor's current selection, falling back to the whole document — " + ex.Message);
+            }
+            return editor.EditorText;
+        }
+
         private async Task ShowStatusAsync(string message)
         {
             await _package.JoinableTaskFactory.SwitchToMainThreadAsync();

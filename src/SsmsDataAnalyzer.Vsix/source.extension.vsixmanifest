@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="SsmsDataAnalyzer.6f2b6e2a-6c2a-4e3a-9c9a-2f6b0c8a1a4d" Version="0.7.3" Language="en-US" Publisher="SsmsDataAnalyzer" />
+    <Identity Id="SsmsDataAnalyzer.6f2b6e2a-6c2a-4e3a-9c9a-2f6b0c8a1a4d" Version="0.7.4" Language="en-US" Publisher="SsmsDataAnalyzer" />
     <DisplayName>SSMS Data Analyzer</DisplayName>
     <Description xml:space="preserve">Per-column data profiling for SQL Server tables: fill rate, exact distinct counts, last-fill date, min/max and flags, directly inside SQL Server Management Studio.</Description>
     <MoreInfo>https://github.com/</MoreInfo>
