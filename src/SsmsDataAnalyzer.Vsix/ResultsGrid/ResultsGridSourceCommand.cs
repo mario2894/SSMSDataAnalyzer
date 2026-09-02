@@ -134,7 +134,14 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 // still get offered and then decline at Invoke, with a specific reason each
                 // time — narrowing those further would mean running the describe on every
                 // right-click, which the doc explicitly warns against.
-                if (SqlLiteralFormatter.IsEffectivelyNull(cell.Value))
+                //
+                // v0.8.0: cell.Value is now display text (see docs/newer-grid-api.md), so this
+                // checks the same "shows exactly NULL" signal TryFormatDisplayText declines on
+                // at Invoke — not IsEffectivelyNull (that only recognizes a real null/DBNull/
+                // SqlTypes.IsNull, none of which a string display value can ever be). This is
+                // a cheap label only; the real decision, including the rare case where a text
+                // column's actual value IS the literal word "NULL", is made at Invoke.
+                if (string.Equals(cell.Value as string, "NULL", StringComparison.Ordinal))
                 {
                     command.Enabled = false;
                     command.Text = $"Go to source for this value ([{cell.ColumnName}] is NULL)";

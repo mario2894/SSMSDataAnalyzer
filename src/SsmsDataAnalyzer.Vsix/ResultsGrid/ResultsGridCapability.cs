@@ -9,14 +9,23 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// v0.7.6 field report: a user on SSMS 22.3.2+25.11520.95 hit a raw .NET modal dialog --
     /// "Could not load type 'Microsoft.SqlServer.Management.QueryExecution.IGridResultSet'
     /// from assembly 'SqlEditors, Version=22.200.0.0, ...'" -- clicking "Go to source" on a
-    /// results grid. Our dev machine is SSMS 22.9.12105.275, where IGridResultSet IS public in
-    /// SqlEditors.dll. Same assembly IDENTITY (22.200.0.0) across both builds -- so the
-    /// reference binds fine -- but DIFFERENT CONTENTS: the type simply doesn't exist in the
-    /// older build's copy of that DLL. The manifest's InstallationTarget floor ([22.0,)) can't
-    /// express "this specific type must exist," and raising it to [22.9,) would block install
-    /// entirely for users on any 22.3-22.8 build, when Analyze Data (the core feature) works
-    /// completely fine for them -- it never touches any of this. So: graceful degradation, not
-    /// exclusion.
+    /// results grid. IGridResultSet was public in our SSMS 22.9 dev build's copy of
+    /// SqlEditors.dll but absent from the user's 22.3 build -- same assembly IDENTITY, so the
+    /// reference bound fine and the failure only surfaced at first real use.
+    ///
+    /// v0.8.0 ("build against the older API" decision): the results-grid code no longer
+    /// touches IGridResultSet/SqlEditors.dll AT ALL -- it was rewritten onto
+    /// Microsoft.SqlServer.GridControl.dll's IGridStorage/IGridControl, which the lead
+    /// confirmed byte-for-byte identical between SSMS 21 and every SSMS 22 build (including
+    /// 22.3). See docs/newer-grid-api.md for the previous IGridResultSet-based
+    /// implementation, preserved for an easy upgrade if a future feature genuinely needs it.
+    ///
+    /// This class is KEPT rather than removed, on the lead's explicit instruction: being
+    /// portable in THEORY (confirmed identical for the specific members this project uses)
+    /// is not the same as having proven there is no OTHER surprise waiting on some 22.x build
+    /// this project has never run on. The shell/core split and the friendly "needs a newer
+    /// SSMS build" message stay as the safety net; RunProbe below now checks the PORTABLE
+    /// types this project actually depends on, not the retired IGridResultSet.
     ///
     /// THIS CLASS is deliberately the ONLY place in the assembly that resolves these types by
     /// STRING NAME rather than a compile-time reference (typeof(...), a field of that type, a
@@ -27,7 +36,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// exist," which is exactly the question this class exists to answer, once, safely, no
     /// matter how broken the results-grid assemblies are on a given SSMS build.
     ///
-    /// Every OTHER file that touches GridControl/IGridResultSet/SqlScriptEditorControl (real,
+    /// Every OTHER file that touches GridControl/IGridStorage/SqlScriptEditorControl (real,
     /// strongly-typed code -- that's still the right way to write the actual feature) must be
     /// reached ONLY through a "shell" method that checks IsSupported FIRST and contains NO
     /// reference of its own to any risky type -- see ResultsGridFindCommand and
@@ -48,10 +57,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         // to prevent.
         private static readonly (string TypeName, string AssemblySimpleName)[] RequiredTypes =
         {
-            ("Microsoft.SqlServer.Management.QueryExecution.IGridResultSet", "SqlEditors"),
             ("Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl", "SqlEditors"),
             ("Microsoft.SqlServer.Management.UI.Grid.GridControl", "Microsoft.SqlServer.GridControl"),
             ("Microsoft.SqlServer.Management.UI.Grid.IGridStorage", "Microsoft.SqlServer.GridControl"),
+            ("Microsoft.SqlServer.Management.UI.Grid.IGridControl", "Microsoft.SqlServer.GridControl"),
         };
 
         private static readonly Lazy<CapabilityResult> Probe = new Lazy<CapabilityResult>(RunProbe);
@@ -77,7 +86,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// make the user relaunch with /log to learn this). Callable even when
         /// IsSupported is true, though callers should only need it when it's not.</summary>
         public static string UserFacingMessage(string featureName) =>
-            featureName + " needs a newer SSMS 22 build (the SQLEditors grid API this feature depends on isn't present here). Analyze Data is unaffected.";
+            featureName + " isn't available in this SSMS session (a results-grid API this feature depends on isn't behaving as expected here). Analyze Data is unaffected.";
 
         private static CapabilityResult RunProbe()
         {

@@ -1,16 +1,20 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.7.6**
+**`SsmsDataAnalyzer.vsix` — version 0.8.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
 
-Requires **SSMS 22**. **Analyze Data works on any SSMS 22 build.** "Find in Results" and
-"Go to source" additionally need an SSMS 22 build new enough to include the results-grid
-introspection API they depend on (confirmed present in SSMS 22.9.12105.275; confirmed absent
-in SSMS 22.3.2+25.11520.95) — on an older build, those two menu items simply do not appear,
-rather than failing. If you don't see "Find..." or "Go to source..." on a results-grid
-right-click, update SSMS.
+Requires **SSMS 22**. Every feature — Analyze Data, Find in Results, Go to source — works on
+every SSMS 22 build. (v0.7.6 briefly needed a newer 22.x build for the results-grid features;
+v0.8.0 moved them onto a results-grid API confirmed present as far back as SSMS 21, so that
+requirement is gone. The graceful-degradation safety net from v0.7.6 — a hidden menu item and
+a plain-language status-bar message instead of an error dialog — is kept in case some other,
+still-unknown SSMS build surprise ever turns up.)
+
+A handful of value types are still declined on "Go to source" for a results-grid cell, in
+trade for that portability — see the version history entry below for exactly which ones and
+why.
 
 ---
 
@@ -26,9 +30,9 @@ right-click, update SSMS.
 
 ## Version history
 
-**0.7.6** — "Find in Results" and "Go to source" no longer crash SSMS with a raw .NET error dialog on an older SSMS 22 build that lacks the results-grid API they need; the menu items just don't appear, and if triggered anyway, the status bar says why. Analyze Data is unaffected either way.
+**0.8.0** — "Find in Results" and "Go to source" now work on every SSMS 22 build (previously some builds needed 22.9+ — see 0.7.6). The trade-off: "Go to source" reads a cell's on-screen text now, not its raw stored value, so it declines rather than guess for a few cases where that text can't be trusted to round-trip exactly: `float`/`real` values (shown rounded), `binary`/`varbinary`/`timestamp` values (shown as hex, with no way to confirm nothing was cut off), very long text or `xml` values (same truncation risk), and a cell that displays exactly "NULL" (indistinguishable from the literal word "NULL" stored in a text column). Every other type — whole numbers, `decimal`/`money`, dates and times, GUIDs, ordinary bounded text — still works exactly as before.
 
-**0.7.6** — On older SSMS 22 builds (e.g. 22.3), Find in Results and Go to source are now hidden with a short explanation instead of failing with a .NET error dialog. Analyze Data works on every SSMS 22 build.
+**0.7.6** — "Find in Results" and "Go to source" no longer crash SSMS with a raw .NET error dialog on an older SSMS 22 build that lacks the results-grid API they need; the menu items just don't appear, and if triggered anyway, the status bar says why. Analyze Data is unaffected either way.
 
 **0.7.5** — When "Go to source" declines because the query and the grid disagree, it now says exactly how they disagree (both column counts, and the first column that differs).
 

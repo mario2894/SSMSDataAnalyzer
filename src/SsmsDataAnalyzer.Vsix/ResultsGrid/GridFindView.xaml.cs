@@ -327,7 +327,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             {
                 try
                 {
-                    var text = state.Grid.GridStorage is Microsoft.SqlServer.Management.QueryExecution.IGridResultSet rs
+                    var text = state.Grid.GridStorage is Microsoft.SqlServer.Management.UI.Grid.IGridStorage rs
                         ? rs.GetCellDataAsString(e.RowIndex, e.ColumnIndex)
                         : null;
                     var searchText = SearchTextBox.Text;

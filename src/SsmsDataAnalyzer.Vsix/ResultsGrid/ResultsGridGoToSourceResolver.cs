@@ -270,22 +270,17 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 if (columnMeta.ReferencedColumn == null)
                     return Decline($"Go to source: '{columnMeta.Name}' is part of a composite foreign key — can't resolve a single-value filter.");
 
-                // IL-verified (QEStorageViewOnReader.GetCellData, SQLEditors.dll): for an
-                // ordinary column this is the real typed value from the underlying
-                // StorageDataReader.GetValue() — NOT the grid's display text (that is
-                // GetCellDataAsString's job, a separate method) — but it is a PROVIDER-
-                // SPECIFIC System.Data.SqlTypes struct (e.g. SqlInt32), not the plain CLR
-                // type the tool window's Min/Max are. A NULL cell comes back as a plain C#
-                // null for an ordinary reader-backed grid, but a SqlTypes struct can ALSO be
-                // "null" via its own IsNull — value == null/DBNull alone would miss that (a
-                // null SqlInt32 is a real, non-null object), which is exactly how a NULL
-                // FundID cell was misreported as "unsupported type SqlInt32" before this fix.
-                // IsEffectivelyNull is the one place both kinds of "no value" are recognized.
-                if (SqlLiteralFormatter.IsEffectivelyNull(request.CellValue))
-                    return Decline($"Go to source: [{request.GridColumnName}] is NULL — there's no value to filter by.");
-
-                if (!SqlLiteralFormatter.TryFormat(request.CellValue, columnMeta, out var literal))
-                    return Decline($"Go to source: [{request.GridColumnName}] has type {request.CellValue.GetType().Name} which can't be rendered as a SQL literal.");
+                // v0.8.0 ("build against the older API" decision): request.CellValue is now
+                // the grid's DISPLAY TEXT (IGridStorage.GetCellDataAsString), not the typed
+                // SqlTypes value IGridResultSet.GetCellData used to give us — see
+                // docs/newer-grid-api.md for the previous typed-value implementation and how
+                // to restore it on SSMS 22.9+. TryFormatDisplayText both parses the text back
+                // to a literal AND is where a NULL-vs-literal-"NULL" cell gets declined (the
+                // old IsEffectivelyNull check no longer applies — CellValue is always a
+                // string now, never a SqlTypes struct or C# null).
+                string cellDisplayText = request.CellValue as string;
+                if (!SqlLiteralFormatter.TryFormatDisplayText(cellDisplayText, described.SystemTypeName, described.MaxLength, out var literal, out var declineReason))
+                    return Decline($"Go to source: [{request.GridColumnName}] {declineReason}.");
 
                 var sql = $"SELECT * FROM {columnMeta.ReferencedQualifiedName} WHERE {SqlIdentifier.Bracket(columnMeta.ReferencedColumn)} = {literal};";
 

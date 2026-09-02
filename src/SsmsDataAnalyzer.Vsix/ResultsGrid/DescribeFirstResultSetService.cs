@@ -19,6 +19,14 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         public string SourceColumn { get; set; }
         public int? ErrorNumber { get; set; }
         public bool? IsHidden { get; set; }
+        /// <summary>v0.8.0: this column's own SQL Server type name (e.g. "int", "varchar",
+        /// "float") as the DM reports it -- needed now that the results grid only gives us
+        /// DISPLAY TEXT (IGridStorage.GetCellDataAsString), not a typed value, so
+        /// SqlLiteralFormatter.TryFormatDisplayText needs to know what it's parsing.</summary>
+        public string SystemTypeName { get; set; }
+        /// <summary>Declared max_length in bytes, -1 for a MAX/LOB type. Used to decline
+        /// converting a possibly-truncated-for-display string back to a literal.</summary>
+        public int MaxLength { get; set; }
     }
 
     /// <summary>
@@ -45,7 +53,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     internal static class DescribeFirstResultSetService
     {
         private const string DescribeSql = @"
-SELECT column_ordinal, name, source_database, source_schema, source_table, source_column, error_number, is_hidden
+SELECT column_ordinal, name, source_database, source_schema, source_table, source_column, error_number, is_hidden, system_type_name, max_length
 FROM sys.dm_exec_describe_first_result_set(@tsql, NULL, 1)
 ORDER BY column_ordinal;";
 
@@ -72,12 +80,26 @@ ORDER BY column_ordinal;";
                             SourceTable = await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(true) ? null : reader.GetString(4),
                             SourceColumn = await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(true) ? null : reader.GetString(5),
                             ErrorNumber = await reader.IsDBNullAsync(6, cancellationToken).ConfigureAwait(true) ? (int?)null : reader.GetInt32(6),
-                            IsHidden = await reader.IsDBNullAsync(7, cancellationToken).ConfigureAwait(true) ? (bool?)null : Convert.ToBoolean(reader.GetValue(7))
+                            IsHidden = await reader.IsDBNullAsync(7, cancellationToken).ConfigureAwait(true) ? (bool?)null : Convert.ToBoolean(reader.GetValue(7)),
+                            // system_type_name comes back like "varchar(50)" or "decimal(18,2)" for
+                            // some types -- strip any parenthesized part, callers only need the bare
+                            // type name to decide how to parse display text.
+                            SystemTypeName = await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(true) ? null : StripTypeArgs(reader.GetString(8)),
+                            MaxLength = await reader.IsDBNullAsync(9, cancellationToken).ConfigureAwait(true) ? 0 : reader.GetInt16(9)
                         });
                     }
                 }
             }
             return result;
+        }
+
+        /// <summary>system_type_name can come back as "varchar(50)", "decimal(18, 2)", etc. --
+        /// this strips the parenthesized part so callers can match on the bare type name.</summary>
+        private static string StripTypeArgs(string systemTypeName)
+        {
+            if (string.IsNullOrEmpty(systemTypeName)) return systemTypeName;
+            int paren = systemTypeName.IndexOf('(');
+            return paren < 0 ? systemTypeName : systemTypeName.Substring(0, paren).TrimEnd();
         }
     }
 }

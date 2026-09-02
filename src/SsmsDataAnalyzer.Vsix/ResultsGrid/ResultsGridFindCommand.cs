@@ -154,10 +154,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             var grid = _cachedGrid as Microsoft.SqlServer.Management.UI.Grid.GridControl;
             if (grid == null) return;
 
-            var resultSet = grid.GridStorage as Microsoft.SqlServer.Management.QueryExecution.IGridResultSet;
+            var resultSet = grid.GridStorage; // IGridStorage — v0.8.0, was IGridResultSet, see docs/newer-grid-api.md
             if (resultSet == null)
             {
-                OeDiagnostics.Warn("Results-grid 'Find': the focused grid has no readable IGridResultSet -- nothing to search.");
+                OeDiagnostics.Warn("Results-grid 'Find': the focused grid has no readable GridStorage -- nothing to search.");
                 return;
             }
 

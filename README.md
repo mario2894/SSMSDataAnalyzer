@@ -26,8 +26,10 @@ Useful if you need to answer questions like:
 
 That's it — you'll find **Analyze Data…** when you right-click a table.
 
-Requires **SSMS 22**. It will not install on SSMS 21 or older, or on Visual Studio.
-**Analyze Data works on every SSMS 22 build.** "Find in Results" and "Go to source" on the query-results grid additionally need SSMS **22.9** or newer (they depend on a results-grid API not present in earlier 22.x builds); on an older build those two menu items simply don't appear.
+Requires **SSMS 22**. It will not install on SSMS 21 or older, or on Visual Studio. Every
+feature — Analyze Data, Find in Results, Go to source — works on every SSMS 22 build,
+including early ones (v0.8.0 moved the results-grid features onto a results-grid API
+confirmed present as far back as SSMS 21, after an earlier build briefly needed a newer one).
 
 <details>
 <summary>If double-clicking doesn't work</summary>

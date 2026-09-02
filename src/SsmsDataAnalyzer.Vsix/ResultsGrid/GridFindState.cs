@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.SqlServer.Management.QueryExecution;
 using Microsoft.SqlServer.Management.UI.Grid;
 
 namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 {
-    /// <summary>One matched cell — GRID column index (same convention as IGridResultSet.GetCellData).</summary>
+    /// <summary>One matched cell — GRID column index (same convention as
+    /// IGridStorage.GetCellDataAsString; v0.8.0, was IGridResultSet.GetCellData — see
+    /// docs/newer-grid-api.md).</summary>
     internal struct GridFindMatch
     {
         public long Row;
@@ -30,7 +31,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// acceptable, honestly-scoped limitation here, unlike the "Go to source" value jump
     /// where the same truncation would be a correctness bug).
     ///
-    /// Chunked, not fire-and-forget: IGridResultSet has no async surface and this project has
+    /// Chunked, not fire-and-forget: IGridStorage has no async surface and this project has
     /// no live-host evidence that IGridStorage is safe to read from a background thread while
     /// the UI paints concurrently. So the scan runs ON the UI thread, yielding periodically
     /// via Task.Yield() so a million-row scan does not freeze SSMS — slower than a background
@@ -44,7 +45,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         public const int MaxMatches = 10_000;
 
         public readonly GridControl Grid;
-        private readonly IGridResultSet _resultSet;
+        private readonly IGridStorage _resultSet;
 
         public List<GridFindMatch> Matches { get; } = new List<GridFindMatch>();
         public int CurrentIndex { get; private set; } = -1;
@@ -60,7 +61,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// </summary>
         public bool? ColumnIndexConventionVerified { get; set; }
 
-        public GridFindState(GridControl grid, IGridResultSet resultSet)
+        public GridFindState(GridControl grid, IGridStorage resultSet)
         {
             Grid = grid ?? throw new ArgumentNullException(nameof(grid));
             _resultSet = resultSet ?? throw new ArgumentNullException(nameof(resultSet));
@@ -84,8 +85,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             IsSearching = true;
             try
             {
-                long totalRows = _resultSet.TotalNumberOfRows;
-                int dataCols = _resultSet.NumberOfDataColumns;
+                long totalRows = _resultSet.NumRows();
+                // ColumnsNumber counts the row-number gutter too (v0.8.0, re-verified live —
+                // see GridClickCapture's class doc comment), hence the -1.
+                int dataCols = Grid.ColumnsNumber - 1;
 
                 for (long row = 0; row < totalRows; row++)
                 {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data.SqlTypes;
 using System.Globalization;
 using SsmsDataAnalyzer.Core.Model;
@@ -167,6 +168,174 @@ namespace SsmsDataAnalyzer.Vsix.GoToSource
                     // withhold rather than guess at a literal shape that might not round-trip.
                     return false;
             }
+        }
+
+        // v0.8.0: types whose DISPLAY TEXT cannot be safely turned back into a literal --
+        // see TryFormatDisplayText's own doc comment for why each category is here.
+        private static readonly HashSet<string> FloatPrecisionTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "float", "real" };
+        private static readonly HashSet<string> BinaryTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "binary", "varbinary", "image", "timestamp", "rowversion" };
+        private static readonly HashSet<string> AlwaysLobTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "text", "ntext", "xml" };
+        private static readonly HashSet<string> UnicodeStringTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "nchar", "nvarchar", "ntext", "sysname" };
+
+        /// <summary>
+        /// v0.8.0 ("build against the older API" decision): the results grid now reads cells
+        /// via IGridStorage.GetCellDataAsString (portable across SSMS 21 and every SSMS 22
+        /// build -- see docs/newer-grid-api.md), which returns the grid's DISPLAY TEXT, not
+        /// the typed value IGridResultSet.GetCellData used to hand us. This is exactly the
+        /// situation the lead originally predicted and a live decompile disproved at the time
+        /// (v0.5.2's SqlInt32 fix) -- now, on the portable API, it is genuinely true, and
+        /// there is no typed value to fall back on.
+        ///
+        /// This does the reverse of TryFormat: given the text SSMS is actually showing on
+        /// screen and the column's real SQL Server type (from
+        /// sys.dm_exec_describe_first_result_set's system_type_name/max_length, not a guess),
+        /// either produce a literal that is PROVABLY the same value the cell holds, or
+        /// decline. Declining is correct whenever the display text alone cannot prove that:
+        /// never emit a literal that might silently filter on the wrong row.
+        ///
+        /// Declines, and why (lead's explicit list, all real and all checked here):
+        /// - float / real: SQL Server's grid display ROUNDS these for readability; the exact
+        ///   stored bit pattern cannot be recovered from the rounded text.
+        /// - binary / varbinary / image / timestamp / rowversion: shown as a hex string, and
+        ///   there is no signal here that distinguishes a complete hex dump from one clipped
+        ///   by SSMS's own display truncation.
+        /// - text / ntext / xml, and any (n)varchar/(n)char declared MAX (max_length == -1):
+        ///   unbounded types are exactly where SSMS's "Maximum Characters Retrieved" grid
+        ///   option can silently clip what is on screen -- no way to tell a complete value
+        ///   from a truncated one from the text alone.
+        /// - a cell whose display text is exactly "NULL": indistinguishable from a real
+        ///   database NULL and the literal 4-character string "NULL" stored in a text column
+        ///   -- guessing either way risks a silently wrong filter.
+        /// Bounded (non-MAX) character types are NOT declined solely for length -- SQL
+        /// Server's own bound on a declared varchar/nvarchar size is comfortably inside
+        /// SSMS's default display-truncation setting, so this is a real, if not
+        /// mathematically absolute, safety margin, not a blind assumption.
+        /// </summary>
+        public static bool TryFormatDisplayText(string displayText, string systemTypeName, int maxLength, out string literal, out string declineReason)
+        {
+            literal = null;
+            declineReason = null;
+
+            if (displayText == null)
+            {
+                declineReason = "the cell has no display text to read";
+                return false;
+            }
+
+            // Ordinal, case-sensitive: SSMS renders a NULL cell as exactly "NULL" -- and a
+            // text column's own stored value could ALSO literally be the 4-character string
+            // "NULL", which would render identically. No way to tell them apart from here.
+            if (string.Equals(displayText, "NULL", StringComparison.Ordinal))
+            {
+                declineReason = "shows \"NULL\" -- on this SSMS build that could be a real NULL or the literal text \"NULL\", and there is no way to tell which from the display text alone";
+                return false;
+            }
+
+            string type = systemTypeName ?? string.Empty;
+
+            if (FloatPrecisionTypes.Contains(type))
+            {
+                declineReason = "'" + type + "' values are shown rounded for display -- the exact stored value can't be recovered from what's on screen";
+                return false;
+            }
+
+            if (BinaryTypes.Contains(type))
+            {
+                declineReason = "'" + type + "' values are shown as hex text, with no way to confirm it wasn't truncated for display";
+                return false;
+            }
+
+            bool isMaxLob = AlwaysLobTypes.Contains(type) || maxLength == -1;
+            if (isMaxLob)
+            {
+                declineReason = "'" + type + "' can hold more text than SSMS may have retrieved for display -- there's no way to confirm this value wasn't truncated";
+                return false;
+            }
+
+            switch (type.ToLowerInvariant())
+            {
+                case "bigint":
+                    if (long.TryParse(displayText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i64)) { literal = i64.ToString(CultureInfo.InvariantCulture); return true; }
+                    break;
+
+                case "int":
+                    if (int.TryParse(displayText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i32)) { literal = i32.ToString(CultureInfo.InvariantCulture); return true; }
+                    break;
+
+                case "smallint":
+                    if (short.TryParse(displayText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i16)) { literal = i16.ToString(CultureInfo.InvariantCulture); return true; }
+                    break;
+
+                case "tinyint":
+                    if (byte.TryParse(displayText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i8)) { literal = i8.ToString(CultureInfo.InvariantCulture); return true; }
+                    break;
+
+                case "bit":
+                    if (displayText == "1" || string.Equals(displayText, "True", StringComparison.OrdinalIgnoreCase)) { literal = "1"; return true; }
+                    if (displayText == "0" || string.Equals(displayText, "False", StringComparison.OrdinalIgnoreCase)) { literal = "0"; return true; }
+                    break;
+
+                // decimal/numeric/money/smallmoney are EXACT types (no float-style rounding).
+                //
+                // v0.8.0 field-caught bug (this project's own harness, run on a non-US-locale
+                // machine): parsing with CurrentCulture + NumberStyles.Number initially
+                // seemed right (SqlMoney.ToString() was already found culture-dependent
+                // elsewhere in this project), but NumberStyles.Number ALSO permits group
+                // separators, and on a culture where "." is the GROUP separator (not the
+                // decimal point), "1234.5600" silently parsed as 12345600 -- a wrong literal
+                // with no error. That is precisely the silent-wrong-value risk this whole
+                // method exists to prevent. Parsing INVARIANT instead (decimal point is
+                // always ".", no group separators accepted) cannot make that mistake: it
+                // either matches what SSMS actually rendered, or fails cleanly and declines.
+                // Never re-add CurrentCulture parsing here without a live-verified answer for
+                // what culture SSMS's OWN grid rendering actually uses -- guessing wrong is
+                // worse than declining.
+                case "decimal":
+                case "numeric":
+                case "money":
+                case "smallmoney":
+                    if (decimal.TryParse(displayText, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var dec)) { literal = dec.ToString(CultureInfo.InvariantCulture); return true; }
+                    break;
+
+                // Same reasoning as decimal/money above: parse invariant, never CurrentCulture
+                // (SSMS's own datetime grid rendering is commonly ISO-like regardless of
+                // locale, which invariant parsing matches; if it ever isn't, declining is the
+                // safe outcome, not a locale guess that could silently swap day/month).
+                case "date":
+                case "datetime":
+                case "datetime2":
+                case "smalldatetime":
+                    if (DateTime.TryParse(displayText, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)) { literal = "'" + dt.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture) + "'"; return true; }
+                    break;
+
+                case "datetimeoffset":
+                    if (DateTimeOffset.TryParse(displayText, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto)) { literal = "'" + dto.ToString("yyyy-MM-ddTHH:mm:ss.fffzzz", CultureInfo.InvariantCulture) + "'"; return true; }
+                    break;
+
+                case "time":
+                    if (TimeSpan.TryParse(displayText, CultureInfo.InvariantCulture, out var ts)) { literal = "'" + ts.ToString(@"hh\:mm\:ss\.fffffff", CultureInfo.InvariantCulture) + "'"; return true; }
+                    break;
+
+                case "uniqueidentifier":
+                    if (Guid.TryParse(displayText, out var g)) { literal = "'" + g.ToString() + "'"; return true; }
+                    break;
+
+                case "char":
+                case "varchar":
+                case "nchar":
+                case "nvarchar":
+                    // Already text -- the display text IS the value (bounded, non-MAX; MAX
+                    // was already declined above). Prefix N' for Unicode types.
+                    literal = (UnicodeStringTypes.Contains(type) ? "N'" : "'") + displayText.Replace("'", "''") + "'";
+                    return true;
+
+                default:
+                    declineReason = "type '" + type + "' can't be safely turned back into a literal from its display text on this SSMS build";
+                    return false;
+            }
+
+            declineReason = "'" + displayText + "' doesn't look like a valid " + type + " value -- declined rather than guess";
+            return false;
         }
 
         /// <summary>nvarchar/nchar/ntext/sysname are Unicode and need the N-prefix; char/varchar/text do not.</summary>
