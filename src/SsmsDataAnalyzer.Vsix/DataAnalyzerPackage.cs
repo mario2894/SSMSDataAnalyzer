@@ -88,6 +88,20 @@ namespace SsmsDataAnalyzer.Vsix
             await ResultsGrid.ResultsGridSourceCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridFindCommand.InitializeAsync(this);
 
+            // v0.7.6 field report (SSMS 22.3 vs our 22.9 dev build): probe ONCE, here, rather
+            // than waiting for the first results-grid right-click, so the ActivityLog carries
+            // the answer from the very start of the session. ResultsGridCapability itself has
+            // no compile-time reference to any SSMS grid type -- see its doc comment -- so
+            // this call is safe unconditionally, on every SSMS 22.x build.
+            if (ResultsGrid.ResultsGridCapability.IsSupported)
+            {
+                OeDiagnostics.Info("Results-grid features (Find in Results, Go to source) are supported in this SSMS session.");
+            }
+            else
+            {
+                OeDiagnostics.Warn("Results-grid features (Find in Results, Go to source) are NOT supported in this SSMS session and will not appear on the results-grid context menu: " + ResultsGrid.ResultsGridCapability.UnsupportedReason);
+            }
+
             InitializeObjectExplorerIntegration();
             InitializeOptionsAccessor();
             InitializeQueryWindowAccessor();

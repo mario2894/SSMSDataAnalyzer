@@ -664,7 +664,17 @@ namespace SsmsDataAnalyzer.Vsix.ToolWindow
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Could not open a query window: {ex.Message}";
+                // v0.7.6: SqlScriptEditorControl/IScriptFactory (the query-window-opening path,
+                // shared with the results-grid "Go to source") live in assemblies that have
+                // shown the SAME cross-22.x-build gap as IGridResultSet -- see
+                // ResultsGrid.ResultsGridCapability's doc comment. This path is already
+                // isolated from a modal-dialog crash by the async/Task indirection through
+                // QueryWindowAccessor (a JIT failure inside an awaited async call surfaces as
+                // a normal caught exception here, not a synchronous throw) -- this just makes
+                // the MESSAGE as actionable as the results-grid one when that specific class
+                // of failure is what happened, instead of a raw exception string.
+                var compat = ResultsGrid.ResultsGridCapability.DescribeIfCompatibilityException(ex, "Go to source");
+                StatusMessage = compat ?? $"Could not open a query window: {ex.Message}";
             }
         }
 
@@ -724,7 +734,17 @@ namespace SsmsDataAnalyzer.Vsix.ToolWindow
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Could not open a query window: {ex.Message}";
+                // v0.7.6: SqlScriptEditorControl/IScriptFactory (the query-window-opening path,
+                // shared with the results-grid "Go to source") live in assemblies that have
+                // shown the SAME cross-22.x-build gap as IGridResultSet -- see
+                // ResultsGrid.ResultsGridCapability's doc comment. This path is already
+                // isolated from a modal-dialog crash by the async/Task indirection through
+                // QueryWindowAccessor (a JIT failure inside an awaited async call surfaces as
+                // a normal caught exception here, not a synchronous throw) -- this just makes
+                // the MESSAGE as actionable as the results-grid one when that specific class
+                // of failure is what happened, instead of a raw exception string.
+                var compat = ResultsGrid.ResultsGridCapability.DescribeIfCompatibilityException(ex, "Go to source");
+                StatusMessage = compat ?? $"Could not open a query window: {ex.Message}";
             }
         }
 

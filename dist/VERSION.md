@@ -1,11 +1,16 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.7.5**
+**`SsmsDataAnalyzer.vsix` — version 0.7.6**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
 
-Requires **SSMS 22**.
+Requires **SSMS 22**. **Analyze Data works on any SSMS 22 build.** "Find in Results" and
+"Go to source" additionally need an SSMS 22 build new enough to include the results-grid
+introspection API they depend on (confirmed present in SSMS 22.9.12105.275; confirmed absent
+in SSMS 22.3.2+25.11520.95) — on an older build, those two menu items simply do not appear,
+rather than failing. If you don't see "Find..." or "Go to source..." on a results-grid
+right-click, update SSMS.
 
 ---
 
@@ -20,6 +25,10 @@ Requires **SSMS 22**.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.7.6** — "Find in Results" and "Go to source" no longer crash SSMS with a raw .NET error dialog on an older SSMS 22 build that lacks the results-grid API they need; the menu items just don't appear, and if triggered anyway, the status bar says why. Analyze Data is unaffected either way.
+
+**0.7.6** — On older SSMS 22 builds (e.g. 22.3), Find in Results and Go to source are now hidden with a short explanation instead of failing with a .NET error dialog. Analyze Data works on every SSMS 22 build.
 
 **0.7.5** — When "Go to source" declines because the query and the grid disagree, it now says exactly how they disagree (both column counts, and the first column that differs).
 

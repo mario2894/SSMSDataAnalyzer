@@ -3,7 +3,6 @@ using System.ComponentModel.Design;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.SqlServer.Management.UI.VSIntegration.Editors;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
@@ -30,11 +29,27 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// ServiceCache.ScriptFactory path DataAnalyzerPackage already wires for the tool window),
     /// and Core's SchemaReader for the FK metadata lookup — the identical query that already
     /// populates ColumnMeta.ReferencedTable/ReferencedColumn/ReferencedQualifiedName.
+    ///
+    /// v0.7.6 field report (SSMS 22.3 vs our 22.9 dev build): a type this whole feature needs
+    /// -- IGridResultSet -- does not exist in an older 22.x build of SqlEditors.dll, and
+    /// clicking "Go to source" there surfaced a raw .NET "Could not load type" modal dialog
+    /// instead of the status-bar decline this feature is supposed to always produce. Every
+    /// method here that touches GridControl/IGridResultSet/SqlScriptEditorControl is now a
+    /// "Core" method, reached ONLY from a same-named shell method that checks
+    /// ResultsGridCapability.IsSupported FIRST and contains no reference of its own to any
+    /// risky type -- see ResultsGridCapability's doc comment for exactly why that separation
+    /// (not just an `if` inside one method) is what actually prevents the JIT from resolving
+    /// the missing type before the guard can run. `_cached` is `object`, not `ClickedGridCell`
+    /// (which itself has GridControl/SqlScriptEditorControl fields), for the same reason -- a
+    /// field of a risky type is itself a compile-time reference this class must not have.
     /// </summary>
     internal sealed class ResultsGridSourceCommand
     {
         private readonly AsyncPackage _package;
-        private ClickedGridCell _cached;
+
+        /// <summary>A ClickedGridCell when ResultsGridCapability.IsSupported, cast back to
+        /// that type only inside *Core methods -- see the class doc comment.</summary>
+        private object _cached;
 
         private ResultsGridSourceCommand(AsyncPackage package, OleMenuCommandService commandService)
         {
@@ -66,76 +81,128 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         }
 
         /// <summary>
-        /// Cheap, local, no DB round trip (docs/resultsgrid-api.md risk #11). Must never throw
-        /// past this method — an unhandled exception here only drops our own item (VS isolates
-        /// command targets, unlike the Object Explorer IWinformsMenuHandler case), but there is
-        /// no reason to risk it.
+        /// SHELL -- no reference to ClickedGridCell/GridControl/SqlScriptEditorControl. Lead's
+        /// explicit ask: "no menu item is better than one that errors" on an unsupported
+        /// build. This method's own JIT compilation can never fail for that reason, so this
+        /// check always runs, even on the SSMS build that started this whole investigation.
+        /// Must never throw past this method — an unhandled exception here only drops our own
+        /// item (VS isolates command targets, unlike the Object Explorer IWinformsMenuHandler
+        /// case), but there is no reason to risk it.
         /// </summary>
         private void OnBeforeQueryStatus(object sender, EventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             var command = (OleMenuCommand)sender;
+
+            if (!ResultsGridCapability.IsSupported)
+            {
+                command.Visible = false;
+                _cached = null;
+                return;
+            }
+
             try
             {
-                if (GridClickCapture.TryCapture(out var cell, out _))
-                {
-                    _cached = cell;
-                    command.Visible = true;
-
-                    // Cheap, local "offered implies works" narrowing (lead's field report —
-                    // an all-NULL FK column offered the item, then refused at Invoke with a
-                    // generic message): a NULL cell can NEVER produce a value filter no matter
-                    // what the DM resolves it to, and we already have the value for free from
-                    // TryCapture, so this one case is worth pre-checking even though the full
-                    // FK-resolution can't be (that needs the DM round trip, deliberately
-                    // deferred to Invoke — docs/resultsgrid-api.md risk #11). Non-FK columns
-                    // and computed expressions still get offered and then decline at Invoke,
-                    // with a specific reason each time — narrowing those further would mean
-                    // running the describe on every right-click, which the doc explicitly
-                    // warns against.
-                    if (SqlLiteralFormatter.IsEffectivelyNull(cell.Value))
-                    {
-                        command.Enabled = false;
-                        command.Text = $"Go to source for this value ([{cell.ColumnName}] is NULL)";
-                    }
-                    else
-                    {
-                        command.Enabled = true;
-                        command.Text = "Go to source for this value";
-                    }
-                }
-                else
-                {
-                    _cached = null;
-                    command.Visible = false;
-                }
+                OnBeforeQueryStatusCore(command);
             }
             catch (Exception ex)
             {
-                OeDiagnostics.Error("Results-grid 'Go to source' BeforeQueryStatus failed", ex);
+                var compat = ResultsGridCapability.DescribeIfCompatibilityException(ex, "Go to source");
+                if (compat == null) OeDiagnostics.Error("Results-grid 'Go to source' BeforeQueryStatus failed", ex);
                 _cached = null;
                 command.Visible = false;
             }
         }
 
+        /// <summary>CORE -- only ever entered when ResultsGridCapability.IsSupported, and
+        /// always behind the shell's try/catch. Safe to reference GridControl/ClickedGridCell
+        /// freely here. Original OnBeforeQueryStatus logic, unchanged.</summary>
+        private void OnBeforeQueryStatusCore(OleMenuCommand command)
+        {
+            if (GridClickCapture.TryCapture(out var cell, out _))
+            {
+                _cached = cell;
+                command.Visible = true;
+
+                // Cheap, local "offered implies works" narrowing (lead's field report — an
+                // all-NULL FK column offered the item, then refused at Invoke with a generic
+                // message): a NULL cell can NEVER produce a value filter no matter what the DM
+                // resolves it to, and we already have the value for free from TryCapture, so
+                // this one case is worth pre-checking even though the full FK-resolution can't
+                // be (that needs the DM round trip, deliberately deferred to Invoke —
+                // docs/resultsgrid-api.md risk #11). Non-FK columns and computed expressions
+                // still get offered and then decline at Invoke, with a specific reason each
+                // time — narrowing those further would mean running the describe on every
+                // right-click, which the doc explicitly warns against.
+                if (SqlLiteralFormatter.IsEffectivelyNull(cell.Value))
+                {
+                    command.Enabled = false;
+                    command.Text = $"Go to source for this value ([{cell.ColumnName}] is NULL)";
+                }
+                else
+                {
+                    command.Enabled = true;
+                    command.Text = "Go to source for this value";
+                }
+            }
+            else
+            {
+                _cached = null;
+                command.Visible = false;
+            }
+        }
+
+        /// <summary>SHELL -- see OnBeforeQueryStatus's doc comment; same reasoning.</summary>
         private void Execute(object sender, EventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            var cell = _cached;
+
+            if (!ResultsGridCapability.IsSupported)
+            {
+                FireAndForgetStatus(ResultsGridCapability.UserFacingMessage("Go to source"));
+                return;
+            }
+
+            try
+            {
+                ExecuteCore();
+            }
+            catch (Exception ex)
+            {
+                var compat = ResultsGridCapability.DescribeIfCompatibilityException(ex, "Go to source");
+                if (compat != null) { FireAndForgetStatus(compat); return; }
+                OeDiagnostics.Error("Results-grid 'Go to source' Execute failed", ex);
+                FireAndForgetStatus("Go to source: " + ex.Message);
+            }
+        }
+
+        /// <summary>CORE -- only ever entered when ResultsGridCapability.IsSupported, and
+        /// always behind the shell's try/catch.</summary>
+        private void ExecuteCore()
+        {
+            var cell = _cached as ClickedGridCell;
             if (cell == null) return;
 
             _package.JoinableTaskFactory.RunAsync(() => ExecuteAsync(cell))
                 .FileAndForget("SsmsDataAnalyzer/ResultsGrid/GoToSource");
         }
 
+        private void FireAndForgetStatus(string message)
+        {
+            _package.JoinableTaskFactory.RunAsync(() => ShowStatusAsync(message))
+                .FileAndForget("SsmsDataAnalyzer/ResultsGrid/GoToSource/Status");
+        }
+
         /// <summary>
-        /// Turns the captured cell into a <see cref="ResultsGridGoToSourceResolver.Request"/>
-        /// and acts on the result. The five-gate precondition check and the FK jump itself
-        /// live in <see cref="ResultsGridGoToSourceResolver"/> — pulled out specifically so it
-        /// can be exercised in a harness without any WinForms/GridControl involved. Every
-        /// decline path and every exception reports through <see cref="ShowStatusAsync"/> —
-        /// there is no tool window here to report to, and the tool-window "Go to source" bug
-        /// (a click that silently did nothing) is exactly the failure mode to not repeat.
+        /// CORE (reachable only from ExecuteCore, itself only reachable when
+        /// ResultsGridCapability.IsSupported). Turns the captured cell into a
+        /// <see cref="ResultsGridGoToSourceResolver.Request"/> and acts on the result. The
+        /// five-gate precondition check and the FK jump itself live in
+        /// <see cref="ResultsGridGoToSourceResolver"/> — pulled out specifically so it can be
+        /// exercised in a harness without any WinForms/GridControl involved. Every decline
+        /// path and every exception reports through <see cref="ShowStatusAsync"/> — there is
+        /// no tool window here to report to, and the tool-window "Go to source" bug (a click
+        /// that silently did nothing) is exactly the failure mode to not repeat.
         /// </summary>
         private async Task ExecuteAsync(ClickedGridCell cell)
         {
@@ -185,22 +252,19 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             }
             catch (Exception ex)
             {
+                var compat = ResultsGridCapability.DescribeIfCompatibilityException(ex, "Go to source");
+                if (compat != null) { await ShowStatusAsync(compat); return; }
                 OeDiagnostics.Error("Results-grid 'Go to source' failed", ex);
                 await ShowStatusAsync("Go to source: " + ex.Message);
             }
         }
 
         /// <summary>
-        /// There is no tool window here — the VS status bar is the SSMS-wide equivalent of
-        /// ProfileViewModel.StatusMessage, and every outcome (success, decline, exception) goes
-        /// through it so nothing about this command can ever look like a click that did
-        /// nothing.
-        /// </summary>
-        /// <summary>
-        /// v0.7.4 field report ("USE db / GO / SELECT ..." almost always declined): SSMS runs
-        /// only the SELECTED text when there is a selection, not the whole editor buffer —
-        /// describing the whole buffer when the user had selected (or was about to run) just
-        /// one statement out of several is exactly why gate 4/5 kept declining.
+        /// CORE (reachable only from ExecuteAsync). v0.7.4 field report ("USE db / GO / SELECT
+        /// ..." almost always declined): SSMS runs only the SELECTED text when there is a
+        /// selection, not the whole editor buffer — describing the whole buffer when the user
+        /// had selected (or was about to run) just one statement out of several is exactly why
+        /// gate 4/5 kept declining.
         ///
         /// Decompilation of SQLEditors.dll (spikes/OeProbe) found the fix does not need to be
         /// built by hand: ScriptEditorControl (SqlScriptEditorControl's base) has an INTERNAL
@@ -213,11 +277,12 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// behaviour rather than failing the command outright — worse selection fidelity, not
         /// a broken feature, if a future SSMS servicing update renames or removes it.
         /// </summary>
-        private static string GetSelectionOrFullText(SqlScriptEditorControl editor)
+        private static string GetSelectionOrFullText(Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl editor)
         {
             try
             {
-                var method = typeof(ScriptEditorControl).GetMethod("GetCurrentlySelectedText", BindingFlags.NonPublic | BindingFlags.Instance);
+                var method = typeof(Microsoft.SqlServer.Management.UI.VSIntegration.Editors.ScriptEditorControl)
+                    .GetMethod("GetCurrentlySelectedText", BindingFlags.NonPublic | BindingFlags.Instance);
                 if (method != null && method.Invoke(editor, null) is string text && !string.IsNullOrEmpty(text))
                     return text;
             }
@@ -228,6 +293,13 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             return editor.EditorText;
         }
 
+        /// <summary>
+        /// There is no tool window here — the VS status bar is the SSMS-wide equivalent of
+        /// ProfileViewModel.StatusMessage, and every outcome (success, decline, exception) goes
+        /// through it so nothing about this command can ever look like a click that did
+        /// nothing. Deliberately has NO risky type reference of its own, so it is safe to call
+        /// from the SHELL (the unsupported-build case) as well as from Core.
+        /// </summary>
         private async Task ShowStatusAsync(string message)
         {
             await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
