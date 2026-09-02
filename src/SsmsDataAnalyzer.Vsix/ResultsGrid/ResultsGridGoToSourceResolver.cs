@@ -8,6 +8,7 @@ using SsmsDataAnalyzer.Core.Metadata;
 using SsmsDataAnalyzer.Core.Model;
 using SsmsDataAnalyzer.Core.Sql;
 using SsmsDataAnalyzer.Vsix.GoToSource;
+using SsmsDataAnalyzer.Vsix.ObjectExplorer;
 
 namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 {
@@ -87,7 +88,13 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 
             var fullMatches = new List<BatchOutcome>();
             var nameMismatches = new List<BatchOutcome>();
-            int erroredCount = 0, countMismatchCount = 0;
+            // v0.7.5 field report: gate 4's decline named only the grid's own column count,
+            // never what was actually described -- the user had to guess which direction
+            // (more/fewer) and where. Kept for every count-mismatch batch so the status-bar
+            // message can say both counts and, when there's exactly one such batch, the
+            // first ordinal where the two column lists actually diverge.
+            var countMismatches = new List<(int BatchIndex, List<DescribedColumn> AllRows, List<DescribedColumn> FilteredRows)>();
+            int erroredCount = 0;
 
             using (var describeConn = new SqlConnection(request.EditorConnectionString))
             {
@@ -116,7 +123,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 
                     // Gate 4: shape must match exactly, or this candidate did not produce
                     // this grid.
-                    if (rows.Count != request.NumberOfDataColumns) { countMismatchCount++; continue; }
+                    if (rows.Count != request.NumberOfDataColumns) { countMismatches.Add((b, allRows, rows)); continue; }
 
                     // Gate 5, now checked across EVERY column (not just the clicked one) —
                     // a stronger identification than matching only the clicked column, per
@@ -159,7 +166,16 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             DescribedColumn described;
             if (fullMatches.Count == 0)
             {
-                if (nameMismatches.Count == 1)
+                // v0.7.5 field report ("SELECT * FROM Finances.Accounting" declined with only
+                // "result shape does not match"): every mismatch this method found is logged
+                // in full (ordinal/name/is_hidden/error_number, the UNFILTERED rows) so the
+                // real cause is never further away than the ActivityLog — but per the lead's
+                // explicit ergonomics rule, the STATUS BAR message itself must carry as much
+                // of that as fits, not just "declined" with the detail hidden behind /log.
+                foreach (var cm in countMismatches) LogBatchDump("count mismatch", cm.BatchIndex, batches.Count, cm.AllRows);
+                foreach (var nmDump in nameMismatches) LogBatchDump("name mismatch", nmDump.BatchIndex, batches.Count, nmDump.Rows);
+
+                if (nameMismatches.Count == 1 && countMismatches.Count == 0)
                 {
                     // Exactly one candidate had the right COLUMN COUNT but a name
                     // disagreement — specific and actionable, same principle as the SqlInt32
@@ -169,8 +185,26 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                     return Decline($"Go to source: column {nm.MismatchOrdinal} is named '{Describe(nm.MismatchDescribedName)}' in the query but '{Describe(nm.MismatchGridName)}' on screen{batchNote} — declined rather than risk the wrong table.");
                 }
 
+                if (countMismatches.Count == 1 && nameMismatches.Count == 0)
+                {
+                    // Exactly one candidate: right batch, wrong COUNT. Always name both
+                    // numbers — which side is bigger already narrows the cause a lot, and
+                    // it's free (lead's explicit ask, after "result shape does not match"
+                    // alone sent the user hunting blind for a real bug: the DMF disagreeing
+                    // with the grid on SELECT *'s expansion).
+                    var cm = countMismatches[0];
+                    string batchNote = batches.Count > 1 ? $" (batch {cm.BatchIndex + 1} of {batches.Count})" : "";
+                    string divergenceNote = "";
+                    var divergence = FindFirstDivergence(cm.FilteredRows, request.GridColumnNames, request.NumberOfDataColumns);
+                    if (divergence.HasValue)
+                    {
+                        divergenceNote = $" First divergence at column {divergence.Value.Ordinal}: described '{Describe(divergence.Value.DescribedName)}', grid '{Describe(divergence.Value.GridName)}'.";
+                    }
+                    return Decline($"Go to source: the query describes {cm.FilteredRows.Count} column(s) but the grid shows {request.NumberOfDataColumns}{batchNote} — declined rather than risk the wrong table.{divergenceNote}");
+                }
+
                 var parts = new List<string>();
-                if (countMismatchCount > 0) parts.Add($"{countMismatchCount} had a different column count");
+                if (countMismatches.Count > 0) parts.Add($"{countMismatches.Count} had a different column count");
                 if (nameMismatches.Count > 0) parts.Add($"{nameMismatches.Count} had different column names");
                 if (erroredCount > 0) parts.Add($"{erroredCount} errored (e.g. a selection or a later batch's temp table)");
                 string detail = parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "";
@@ -284,6 +318,48 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// <summary>For decline messages only — renders a null/blank column name the same
         /// human-readable way SSMS itself shows an unnamed column.</summary>
         private static string Describe(string name) => string.IsNullOrEmpty(name) ? "(No column name)" : name;
+
+        /// <summary>
+        /// v0.7.5: when a single batch's described column COUNT doesn't match the grid, the
+        /// two counts alone tell the user which direction (more/fewer) but not WHERE the two
+        /// lists actually part ways — this walks both lists together, ordinal by ordinal, and
+        /// returns the first ordinal where the described name and the grid's own name stop
+        /// agreeing (same <see cref="NamesMatch"/> used everywhere else, so "both blank"
+        /// still counts as agreement). Returns null if the caller has no grid column names to
+        /// compare against (the pre-v0.7.4 degraded-caller case) or if every ordinal up to the
+        /// shorter list's end actually agrees (the two lists only differ by trailing
+        /// columns — still worth saying so in the message, just nothing to point at).
+        /// </summary>
+        private static (int Ordinal, string DescribedName, string GridName)? FindFirstDivergence(
+            List<DescribedColumn> describedRows, string[] gridColumnNames, int gridColumnCount)
+        {
+            if (gridColumnNames == null) return null;
+
+            int maxOrdinal = Math.Max(describedRows.Count == 0 ? 0 : describedRows.Max(r => r.Ordinal), gridColumnCount);
+            for (int ord = 1; ord <= maxOrdinal; ord++)
+            {
+                string describedName = describedRows.FirstOrDefault(r => r.Ordinal == ord)?.Name;
+                string gridName = ord - 1 < gridColumnNames.Length ? gridColumnNames[ord - 1] : null;
+                if (!NamesMatch(describedName, gridName))
+                    return (ord, describedName, gridName);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// v0.7.5: the fuller diagnostic the lead asked to keep alongside the short status-bar
+        /// message — every row exactly as sys.dm_exec_describe_first_result_set returned it
+        /// (UNFILTERED: is_hidden and error_number included, not dropped), so a divergence
+        /// that the short message can't fully explain is still fully visible without needing
+        /// SSMS relaunched with /log (that requirement is exactly what the status-bar message
+        /// itself exists to avoid — this is the fallback for when even that isn't enough).
+        /// </summary>
+        private static void LogBatchDump(string reason, int batchIndex, int totalBatches, List<DescribedColumn> allRows)
+        {
+            var lines = allRows.Select(r =>
+                $"  ordinal={r.Ordinal} name='{r.Name ?? "<null>"}' is_hidden={(r.IsHidden.HasValue ? r.IsHidden.Value.ToString() : "NULL")} error_number={(r.ErrorNumber.HasValue ? r.ErrorNumber.Value.ToString() : "NULL")}");
+            OeDiagnostics.Warn($"Go to source ({reason}) — full describe dump for batch {batchIndex + 1} of {totalBatches}:\n{string.Join("\n", lines)}");
+        }
 
         /// <summary>For decline/conflict messages only — human-readable "where does this
         /// column actually come from," used to name a disagreement between batches

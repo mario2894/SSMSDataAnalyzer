@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.7.4**
+**`SsmsDataAnalyzer.vsix` — version 0.7.5**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -20,6 +20,8 @@ Requires **SSMS 22**.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.7.5** — When "Go to source" declines because the query and the grid disagree, it now says exactly how they disagree (both column counts, and the first column that differs).
 
 **0.7.4** — "Go to source" now works with multi-statement queries (`USE ... GO ... SELECT`), with a selection, and when a tab shows more than one result grid.
 
