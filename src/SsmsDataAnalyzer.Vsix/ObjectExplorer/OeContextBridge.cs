@@ -30,6 +30,9 @@ namespace SsmsDataAnalyzer.Vsix.ObjectExplorer
         // guarding against duplicate AddChild calls.
         private readonly ConditionalWeakTable<object, AnalyzeMenuHandler> _patchedHandlers = new ConditionalWeakTable<object, AnalyzeMenuHandler>();
 
+        // Held so Dispose can unsubscribe; null when the notification was unavailable.
+        private INavigationEventNotification _itemsAdded;
+
         private bool _disposed;
 
         /// <summary>
@@ -61,6 +64,43 @@ namespace SsmsDataAnalyzer.Vsix.ObjectExplorer
             _objectExplorerService = serviceProvider.GetService(typeof(IObjectExplorerService)) as IObjectExplorerService;
 
             _objectExplorerContext.CurrentContextChanged += OnCurrentContextChanged;
+
+            // v0.8.1 field report: "First time when server is connected and i clicked right
+            // click there is no Analyze Data..., and then after second click Analyze Data is
+            // showed."
+            //
+            // CurrentContextChanged alone cannot fix this, and neither can the pull-based
+            // fallback in AnalyzeMenuHandler.GetMenuItems — that fallback only runs if OUR
+            // handler is already attached to the node's menu-handler host, and on the very
+            // first right-click of a session nothing has attached it yet. SSMS builds the
+            // menu from the host it already has, so our item simply isn't there. The second
+            // click works because the first one's selection change patched the host.
+            //
+            // ItemsAdded fires as the tree MATERIALISES nodes (expanding Tables, etc.) —
+            // strictly before any right-click on them is possible. Patching there means the
+            // host is already wired by the time the first context menu is built.
+            //
+            // Optional, like everything else in this bridge: if the notification is
+            // unavailable or its shape differs, we keep the existing behaviour rather than
+            // failing construction (which would drop the whole feature to Tier B).
+            try
+            {
+                var itemsAdded = _objectExplorerContext.ItemsAdded;
+                if (itemsAdded != null)
+                {
+                    itemsAdded.Event += OnItemsAdded;
+                    _itemsAdded = itemsAdded;
+                }
+                else
+                {
+                    OeDiagnostics.InfoOnce("oe.itemsAdded.unavailable",
+                        "INavigationContextProvider.ItemsAdded is null — falling back to selection-driven patching only. 'Analyze Data' may be missing on the first right-click of a session.");
+                }
+            }
+            catch (Exception ex)
+            {
+                OeDiagnostics.Error("Subscribing to ItemsAdded failed; first-right-click patching is unavailable", ex);
+            }
         }
 
         /// <summary>
@@ -97,6 +137,37 @@ namespace SsmsDataAnalyzer.Vsix.ObjectExplorer
         /// for an already-patched host is a no-op retarget, never a duplicate AddChild.
         /// </summary>
         public void PatchNodeOnDemand(INodeInformation node) => TryPatchNode(node);
+
+        /// <summary>
+        /// Patches nodes as the tree creates them, so the first right-click of a session
+        /// already finds our menu item attached. See the constructor's comment for why
+        /// selection-driven patching alone cannot cover that case.
+        /// </summary>
+        private void OnItemsAdded(object sender, NodesChangedEventArgs e)
+        {
+            // Same reasoning as OnCurrentContextChanged: this runs inside SSMS's own tree
+            // machinery, so it must never throw back into it.
+            try
+            {
+                OeDiagnostics.InfoOnce("oe.itemsAdded.fired",
+                    "ItemsAdded fired for the first time this session — nodes are being patched as the tree materialises them.");
+
+                var added = e?.ChangedNodes;
+                if (added == null || added.Count == 0) return;
+
+                for (int i = 0; i < added.Count; i++)
+                {
+                    // TryPatchNode is idempotent (ConditionalWeakTable dedupe), so overlapping
+                    // with CurrentContextChanged is harmless — it retargets rather than
+                    // double-adding.
+                    TryPatchNode(added[i] as INodeInformation);
+                }
+            }
+            catch (Exception ex)
+            {
+                OeDiagnostics.Error("ItemsAdded handler threw", ex);
+            }
+        }
 
         private void OnCurrentContextChanged(object sender, NodesChangedEventArgs e)
         {
@@ -181,6 +252,12 @@ namespace SsmsDataAnalyzer.Vsix.ObjectExplorer
             if (_disposed) return;
             _disposed = true;
             _objectExplorerContext.CurrentContextChanged -= OnCurrentContextChanged;
+            if (_itemsAdded != null)
+            {
+                try { _itemsAdded.Event -= OnItemsAdded; }
+                catch (Exception ex) { OeDiagnostics.Error("Unsubscribing from ItemsAdded failed", ex); }
+                _itemsAdded = null;
+            }
         }
     }
 }

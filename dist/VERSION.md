@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.8.1**
+**`SsmsDataAnalyzer.vsix` — version 0.8.2**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -29,6 +29,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.8.2** — Fixed "Analyze Data..." missing from the right-click menu on the very first right-click after connecting to a server (it appeared from the second click onward).
 
 **0.8.1** — Fixed "Go to source" refusing to work on query windows using Windows Authentication (it mistook them for Entra sign-ins).
 
