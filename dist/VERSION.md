@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.8.0**
+**`SsmsDataAnalyzer.vsix` — version 0.8.1**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -29,6 +29,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.8.1** — Fixed "Go to source" refusing to work on query windows using Windows Authentication (it mistook them for Entra sign-ins).
 
 **0.8.0** — "Find in Results" and "Go to source" now work on every SSMS 22 build (previously some builds needed 22.9+ — see 0.7.6). The trade-off: "Go to source" reads a cell's on-screen text now, not its raw stored value, so it declines rather than guess for a few cases where that text can't be trusted to round-trip exactly: `float`/`real` values (shown rounded), `binary`/`varbinary`/`timestamp` values (shown as hex, with no way to confirm nothing was cut off), very long text or `xml` values (same truncation risk), and a cell that displays exactly "NULL" (indistinguishable from the literal word "NULL" stored in a text column). Every other type — whole numbers, `decimal`/`money`, dates and times, GUIDs, ordinary bounded text — still works exactly as before.
 
