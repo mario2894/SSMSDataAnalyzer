@@ -85,10 +85,27 @@
         </Strings>
       </Button>
 
+      <!--
+        NOTE: deliberately NOT DefaultInvisible/DynamicVisibility, unlike the results-grid
+        buttons. Those flags keep a command hidden until the package is loaded and its
+        BeforeQueryStatus can vote on visibility — which means that in a session where nothing
+        has loaded the package yet, the item never appears at all. v0.9.0 shipped with those
+        flags and the items were missing from the editor's right-click menu for exactly that
+        reason. Statically visible instead: clicking loads the package on demand, and Execute
+        still degrades with a status-bar message if there is no text document to paste into.
+      -->
       <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsSqlIn" priority="0x0100" type="Button">
         <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
-        <CommandFlag>DynamicVisibility</CommandFlag>
-        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings>
+          <ButtonText>Paste as SQL IN (...)</ButtonText>
+          <ToolTipText>Paste the clipboard's lines as a quoted T-SQL IN list.</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- Same command, also on the Tools menu: reachable even if the editor
+           context-menu placement ever stops merging. -->
+<Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsSqlIn" priority="0x0200" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
         <Strings>
           <ButtonText>Paste as SQL IN (...)</ButtonText>
           <ToolTipText>Paste the clipboard's lines as a quoted T-SQL IN list.</ToolTipText>
@@ -97,8 +114,16 @@
 
       <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0110" type="Button">
         <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
-        <CommandFlag>DynamicVisibility</CommandFlag>
-        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings>
+          <ButtonText>Paste as numeric SQL IN (...)</ButtonText>
+          <ToolTipText>Paste the clipboard's lines as an unquoted T-SQL IN list, for numbers.</ToolTipText>
+        </Strings>
+      </Button>
+
+      <!-- Same command, also on the Tools menu: reachable even if the editor
+           context-menu placement ever stops merging. -->
+<Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0210" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
         <Strings>
           <ButtonText>Paste as numeric SQL IN (...)</ButtonText>
           <ToolTipText>Paste the clipboard's lines as an unquoted T-SQL IN list, for numbers.</ToolTipText>

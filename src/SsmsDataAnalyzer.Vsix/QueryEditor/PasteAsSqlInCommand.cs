@@ -78,7 +78,11 @@ namespace SsmsDataAnalyzer.Vsix.QueryEditor
                 OeDiagnostics.Error("PasteAsSqlIn BeforeQueryStatus failed", ex);
             }
 
-            command.Visible = available;
+            // Enable/disable only — never hide. Visibility is already scoped by the menu the
+            // command sits in; hiding here as well would make a missing item ambiguous between
+            // "wrong menu", "package not loaded" and "no document", which is exactly the
+            // guessing game v0.9.0 cost us.
+            command.Visible = true;
             command.Enabled = available;
         }
 
