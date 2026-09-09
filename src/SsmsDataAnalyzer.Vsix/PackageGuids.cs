@@ -46,5 +46,13 @@ namespace SsmsDataAnalyzer.Vsix
         /// <summary>User request: "Find... on right click in result grid of SSMS." Same
         /// results-grid menu group as GoToSourceForValueCommandId.</summary>
         public const int GridFindCommandId = 0x0201;
+
+        /// <summary>User request: "Paste as SQL IN (...)" in the query editor. This group is
+        /// parented (in VSCommandTable.vsct only) to the STANDARD VS code-window context menu,
+        /// guidSHLMainMenu:IDM_VS_CTXT_CODEWIN — SSMS's T-SQL editor is a VS code window, so
+        /// unlike the results-grid commands this depends on no SSMS-build-specific API.</summary>
+        public const int QueryEditorMenuGroup = 0x1050;
+        public const int PasteAsSqlInCommandId = 0x0300;
+        public const int PasteAsNumericSqlInCommandId = 0x0301;
     }
 }

@@ -88,6 +88,13 @@ namespace SsmsDataAnalyzer.Vsix
             await ResultsGrid.ResultsGridSourceCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridFindCommand.InitializeAsync(this);
 
+            // Query-editor "Paste as SQL IN (...)". Registered on the package's own command
+            // service, like every other command here. Unlike the results-grid features this
+            // touches no SSMS-build-specific API — the T-SQL editor is a standard VS code
+            // window — so it needs no capability probe and works on every SSMS 22 build.
+            var commandService = await GetServiceAsync(typeof(System.ComponentModel.Design.IMenuCommandService)) as OleMenuCommandService;
+            QueryEditor.PasteAsSqlInCommand.Register(this, commandService);
+
             // v0.7.6 field report (SSMS 22.3 vs our 22.9 dev build): probe ONCE, here, rather
             // than waiting for the first results-grid right-click, so the ActivityLog carries
             // the answer from the very start of the session. ResultsGridCapability itself has

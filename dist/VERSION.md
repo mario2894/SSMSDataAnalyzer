@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.8.2**
+**`SsmsDataAnalyzer.vsix` — version 0.9.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -26,9 +26,12 @@ why.
 | Search the analysis results | Click the panel → **Ctrl+F** |
 | Search inside query results | Right-click the results grid → **Find…** |
 | Jump to a linked record | Right-click a cell or column → **Go to source…** |
+| Paste a list as an IN clause | In a query window, right-click → **Paste as SQL IN (...)** |
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.9.0** — New: **Paste as SQL IN (...)** and **Paste as numeric SQL IN (...)** on the query editor's right-click menu. Turns a list of values from the clipboard (a spreadsheet column, an email) into a ready-to-use IN list — de-duplicated, apostrophes escaped, `N` prefix added automatically for accented text. The numeric variant omits the quotes, and refuses (naming the offending value) if something isn't a number.
 
 **0.8.2** — Fixed "Analyze Data..." missing from the right-click menu on the very first right-click after connecting to a server (it appeared from the second click onward).
 

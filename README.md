@@ -155,6 +155,53 @@ never guess and send you to the wrong table.
 
 ---
 
+## Feature 5 — Paste a list as `IN (...)`
+
+You have a list of values in a spreadsheet or an email, and you need them as a SQL `IN` list.
+
+**Where:** in a query window, put the cursor where you want them → **right-click** →
+**Paste as SQL IN (...)** (or **Paste as numeric SQL IN (...)** for numbers).
+
+Copy this:
+
+```
+aba
+baba
+dagate
+```
+
+Right-click, Paste as SQL IN (...), and you get:
+
+```sql
+(
+'aba',
+'baba',
+'dagate'
+)
+```
+
+The **numeric** variant leaves the quotes off, for ID columns and other numbers:
+
+```sql
+(
+10,
+20,
+30
+)
+```
+
+It handles the awkward bits for you:
+
+- **Duplicates are removed** (and the status bar tells you how many).
+- **Apostrophes are escaped** — `O'Brien` becomes `'O''Brien'`, which is valid SQL.
+- **Accented text gets the `N` prefix** automatically, so Croatian characters survive.
+- **Values already in quotes** are not double-quoted.
+- **Excel columns work** — tabs and line breaks are both treated as separators.
+- If you pick the **numeric** variant and something isn't a number, it **tells you which value**
+  and pastes nothing, rather than producing SQL that doesn't run.
+
+---
+
 ## Settings
 
 **Where:** **Tools** menu → **Options…** → **SSMS Data Analyzer** (in the list on the left)

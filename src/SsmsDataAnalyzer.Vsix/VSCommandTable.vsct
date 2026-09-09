@@ -28,6 +28,16 @@
       <Group guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" priority="0x0600">
         <Parent guid="guidSqlEditorGroup" id="IDM_SQLWB_SQLRESGRID_CONTEXT" />
       </Group>
+
+      <!--
+        Query-editor commands. Parented to the STANDARD VS code-window context menu rather
+        than an SSMS-specific one: SSMS's T-SQL editor is a VS code window, and
+        guidSHLMainMenu / IDM_VS_CTXT_CODEWIN come from vsshlids.h (see <Extern> above), so
+        this needs no hardcoded numeric IDs and no SSMS-build-specific API.
+      -->
+      <Group guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" priority="0x0700">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
+      </Group>
     </Groups>
 
     <Buttons>
@@ -74,6 +84,26 @@
           <LocCanonicalName>.SsmsDataAnalyzer.GridFind</LocCanonicalName>
         </Strings>
       </Button>
+
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsSqlIn" priority="0x0100" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings>
+          <ButtonText>Paste as SQL IN (...)</ButtonText>
+          <ToolTipText>Paste the clipboard's lines as a quoted T-SQL IN list.</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0110" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings>
+          <ButtonText>Paste as numeric SQL IN (...)</ButtonText>
+          <ToolTipText>Paste the clipboard's lines as an unquoted T-SQL IN list, for numbers.</ToolTipText>
+        </Strings>
+      </Button>
     </Buttons>
 
     <Bitmaps>
@@ -91,6 +121,9 @@
       <IDSymbol name="ResultsGridMenuGroup" value="0x1040" />
       <IDSymbol name="cmdidGoToSourceForValue" value="0x0200" />
       <IDSymbol name="cmdidGridFind" value="0x0201" />
+      <IDSymbol name="QueryEditorMenuGroup" value="0x1050" />
+      <IDSymbol name="cmdidPasteAsSqlIn" value="0x0300" />
+      <IDSymbol name="cmdidPasteAsNumericSqlIn" value="0x0301" />
     </GuidSymbol>
 
     <!--
