@@ -71,6 +71,21 @@ namespace SsmsDataAnalyzer.Core.Export
                     return meta.MaxLength == -1
                         ? meta.TypeName + "(max)"
                         : meta.TypeName + "(" + meta.CharLength.ToString(CultureInfo.InvariantCulture) + ")";
+
+                // Precision AND scale: decimal(18,2).
+                case "decimal":
+                case "numeric":
+                    return meta.TypeName + "("
+                        + meta.Precision.ToString(CultureInfo.InvariantCulture) + ","
+                        + meta.Scale.ToString(CultureInfo.InvariantCulture) + ")";
+
+                // Scale only. Shown even at the default (7) because the whole point of this
+                // column is to see what the schema actually declares.
+                case "datetime2":
+                case "time":
+                case "datetimeoffset":
+                    return meta.TypeName + "(" + meta.Scale.ToString(CultureInfo.InvariantCulture) + ")";
+
                 default:
                     return meta.TypeName;
             }

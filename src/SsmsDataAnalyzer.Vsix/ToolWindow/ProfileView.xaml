@@ -152,7 +152,7 @@
                             </Style>
                         </DataGridTextColumn.CellStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Type" Binding="{Binding TypeName}" Width="70">
+                    <DataGridTextColumn Header="Type" Binding="{Binding TypeName}" Width="110">
                         <DataGridTextColumn.CellStyle>
                             <Style TargetType="DataGridCell">
                                 <Style.Triggers>

@@ -32,6 +32,15 @@ namespace SsmsDataAnalyzer.Core.Model
         /// <summary>sys.columns.max_length, -1 = MAX</summary>
         public int MaxLength { get; set; }
 
+        /// <summary>
+        /// sys.columns.precision / .scale. Only meaningful for the types that carry them —
+        /// decimal/numeric (both), and the datetime2/time/datetimeoffset family (scale only).
+        /// Used purely for display, so the grid can show decimal(18,2) rather than a bare
+        /// "decimal"; nothing in the SQL generation depends on them.
+        /// </summary>
+        public byte Precision { get; set; }
+        public byte Scale { get; set; }
+
         public bool IsNullable { get; set; }
         public bool IsIdentity { get; set; }
         public bool IsPrimaryKey { get; set; }

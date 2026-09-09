@@ -54,7 +54,9 @@ SELECT
     fkRef.RefSchema                                               AS ReferencedSchema,
     fkRef.RefTable                                                AS ReferencedTable,
     fkRef.RefColumn                                               AS ReferencedColumn,
-    fkRef.FkName                                                  AS ForeignKeyName
+    fkRef.FkName                                                  AS ForeignKeyName,
+    c.precision                                                   AS Precision,
+    c.scale                                                       AS Scale
 FROM sys.columns c
 JOIN sys.types t
     ON t.user_type_id = c.user_type_id
@@ -164,7 +166,11 @@ WHERE ps.object_id = OBJECT_ID(@table)
                             ReferencedSchema = reader.IsDBNull(11) ? null : reader.GetString(11),
                             ReferencedTable = reader.IsDBNull(12) ? null : reader.GetString(12),
                             ReferencedColumn = reader.IsDBNull(13) ? null : reader.GetString(13),
-                            ForeignKeyName = reader.IsDBNull(14) ? null : reader.GetString(14)
+                            ForeignKeyName = reader.IsDBNull(14) ? null : reader.GetString(14),
+                            // Appended at the END of the select list on purpose: inserting
+                            // mid-list would silently shift every ordinal below it.
+                            Precision = reader.IsDBNull(15) ? (byte)0 : reader.GetByte(15),
+                            Scale = reader.IsDBNull(16) ? (byte)0 : reader.GetByte(16)
                         });
                     }
                 }

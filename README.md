@@ -82,7 +82,7 @@ A panel opens and fills in after a few seconds, one row per column:
 | Column in the panel | What it tells you |
 |---|---|
 | **Column** | The field name |
-| **Type** | What kind of data it holds (text, number, date…) |
+| **Type** | What kind of data it holds, with its declared size — `nvarchar(50)`, `decimal(18,2)`, `nvarchar(max)` |
 | **Filled** | How many rows actually have a value here |
 | **Fill %** | The same as a percentage — **the quickest thing to scan** |
 | **Blank** | Rows containing empty text (counted separately from "no value at all") |

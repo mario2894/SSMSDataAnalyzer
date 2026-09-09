@@ -65,7 +65,14 @@ namespace SsmsDataAnalyzer.Vsix.ToolWindow
 
         public int? ColumnId => _profile.Meta?.ColumnId;
         public string Name => _profile.Meta?.Name;
-        public string TypeName => _profile.Meta?.TypeName;
+        /// <summary>
+        /// The declared type INCLUDING its size — nvarchar(50), decimal(18,2), datetime2(7) —
+        /// not the bare type name. Uses Core's ProfileFormat.TypeDisplay so the grid, the
+        /// Markdown export and the CLI all render a type identically.
+        /// </summary>
+        public string TypeName => _profile.Meta == null
+            ? null
+            : SsmsDataAnalyzer.Core.Export.ProfileFormat.TypeDisplay(_profile.Meta);
         public string Collation => _profile.Meta?.Collation;
         public bool IsNullable => _profile.Meta?.IsNullable ?? false;
         public bool IsIdentity => _profile.Meta?.IsIdentity ?? false;

@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.9.4**
+**`SsmsDataAnalyzer.vsix` — version 0.10.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -30,6 +30,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.10.0** — The **Type** column in Analyze Data now shows the declared size: `nvarchar(50)`, `decimal(18,2)`, `datetime2(7)`, `nvarchar(max)` — instead of just the bare type name.
 
 **0.9.4** — "Paste as SQL IN" now actually appears on the query editor's right-click menu. Earlier builds attached it to the generic Visual Studio editor menu; SSMS's query editor uses its own.
 
