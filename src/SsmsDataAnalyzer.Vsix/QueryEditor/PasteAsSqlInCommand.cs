@@ -14,13 +14,20 @@ namespace SsmsDataAnalyzer.Vsix.QueryEditor
     /// right-click menu. Takes the clipboard's lines and inserts them at the caret as an
     /// IN list.
     ///
-    /// The menu group is parented to the STANDARD VS code-window context menu
-    /// (guidSHLMainMenu:IDM_VS_CTXT_CODEWIN), not an SSMS-specific one. Confirmed from
-    /// SQLEditors.dll's own VSStandardMenus.VsSHLMainMenu
-    /// ({d309f791-903f-11d0-9efc-00a0c911004f}) and VSContextMenus.ContextMenu_CODEWIN — SSMS's
-    /// query editor is a VS code window, so this is the same long-lived menu VS itself uses.
-    /// That matters for version portability: unlike the results-grid work, nothing here
-    /// depends on an SSMS-build-specific API.
+    /// The menu group is parented to SSMS's OWN query-editor context menu,
+    /// GUID_SQLEditorGroup:0x0050 — see VSCommandTable.vsct for the IL trail.
+    ///
+    /// v0.9.0-0.9.3 used guidSHLMainMenu:IDM_VS_CTXT_CODEWIN instead, reasoning that SSMS's
+    /// T-SQL editor is a VS code window. It is a VS code window, but it does NOT use that
+    /// menu: SqlScriptEditorControl.get_ScriptEditorContextMenuID returns 0x0050 for an
+    /// ordinary query window and only 1037 (IDM_VS_CTXT_CODEWIN) when debugging or editing a
+    /// SQL object document. The items simply never appeared. Do not "simplify" this back to
+    /// the standard menu.
+    ///
+    /// The commands are also placed on the Tools menu (a CommandPlacement, not a second
+    /// Button definition — a command may only be defined once). That is a usable fallback and
+    /// a diagnostic: present under Tools but absent from the right-click menu means the menu
+    /// id is wrong, absent from both means the package did not load.
     ///
     /// All formatting rules live in <see cref="SqlInListFormatter"/> so they are testable
     /// without a live host; this class only does clipboard, editor and status-bar plumbing.

@@ -12,6 +12,21 @@ Useful if you need to answer questions like:
 - *How many different values does this field actually have?*
 - *This ID points at another table — what's the actual record behind it?*
 
+It also fills in a few things SSMS itself doesn't have: searching query results, and turning a
+list of values into a SQL `IN (...)` clause.
+
+## Everything it adds, at a glance
+
+| What | Where to click |
+|---|---|
+| **Analyze a table** — fill rates, distinct counts, last-fill dates | Object Explorer → right-click a table → **Analyze Data…** |
+| **Search the analysis** | Click the panel → **Ctrl+F** |
+| **Search query results** — SSMS has no built-in find for these | Right-click the results grid → **Find…** |
+| **Jump to a linked record** | Right-click a cell or a column → **Go to source…** |
+| **Paste a list as `IN (...)`** | In a query window, right-click → **Paste as SQL IN (...)** |
+| **Settings** | **Tools → Options… → SSMS Data Analyzer** |
+| **Your own keyboard shortcuts** | **Tools → Options… → Environment → Keyboard** |
+
 ---
 
 ## Installing it
@@ -26,10 +41,10 @@ Useful if you need to answer questions like:
 
 That's it — you'll find **Analyze Data…** when you right-click a table.
 
-Requires **SSMS 22**. It will not install on SSMS 21 or older, or on Visual Studio. Every
-feature — Analyze Data, Find in Results, Go to source — works on every SSMS 22 build,
-including early ones (v0.8.0 moved the results-grid features onto a results-grid API
-confirmed present as far back as SSMS 21, after an earlier build briefly needed a newer one).
+Requires **SSMS 22**. It will not install on SSMS 21 or older, or on Visual Studio.
+**Every feature works on every SSMS 22 build**, including early ones — v0.8.0 moved the
+results-grid features onto an API confirmed present as far back as SSMS 21, after an earlier
+build briefly needed a newer one.
 
 <details>
 <summary>If double-clicking doesn't work</summary>
@@ -190,8 +205,21 @@ The **numeric** variant leaves the quotes off, for ID columns and other numbers:
 )
 ```
 
-### Giving it a keyboard shortcut
+It handles the awkward bits for you:
 
+- **Duplicates are removed** (and the status bar tells you how many).
+- **Apostrophes are escaped** — `O'Brien` becomes `'O''Brien'`, which is valid SQL.
+- **Accented text gets the `N` prefix** automatically, so Croatian characters survive.
+- **Values already in quotes** are not double-quoted.
+- **Excel columns work** — tabs and line breaks are both treated as separators.
+- If you pick the **numeric** variant and something isn't a number, it **tells you which value**
+  and pastes nothing, rather than producing SQL that doesn't run.
+
+---
+
+## Keyboard shortcuts
+
+The extension ships with **no** default shortcuts, so it can't steal a key you already use.
 You can bind your own — no rebuild needed:
 
 **Tools → Options… → Environment → Keyboard**, type `SsmsDataAnalyzer` in
@@ -209,16 +237,6 @@ The commands are named:
 Set *Use new shortcut in* to **Text Editor** if you only want it inside query windows, or
 leave it on **Global**. The extension deliberately ships with **no** default shortcuts — a
 default would risk taking a key you already use for something else.
-
-It handles the awkward bits for you:
-
-- **Duplicates are removed** (and the status bar tells you how many).
-- **Apostrophes are escaped** — `O'Brien` becomes `'O''Brien'`, which is valid SQL.
-- **Accented text gets the `N` prefix** automatically, so Croatian characters survive.
-- **Values already in quotes** are not double-quoted.
-- **Excel columns work** — tabs and line breaks are both treated as separators.
-- If you pick the **numeric** variant and something isn't a number, it **tells you which value**
-  and pastes nothing, rather than producing SQL that doesn't run.
 
 ---
 
