@@ -30,13 +30,26 @@
       </Group>
 
       <!--
-        Query-editor commands. Parented to the STANDARD VS code-window context menu rather
-        than an SSMS-specific one: SSMS's T-SQL editor is a VS code window, and
-        guidSHLMainMenu / IDM_VS_CTXT_CODEWIN come from vsshlids.h (see <Extern> above), so
-        this needs no hardcoded numeric IDs and no SSMS-build-specific API.
+        Query-editor commands.
+
+        v0.9.0-0.9.3 parented this to guidSHLMainMenu:IDM_VS_CTXT_CODEWIN on the reasoning
+        that SSMS's T-SQL editor is a VS code window. It is not that menu, and the items never
+        appeared. Resolved from SQLEditors.dll IL rather than by further guessing:
+
+          ScriptEditorControl::OnShowPopupMenu calls CommonUtils.DisplayPopupMenu with
+          get_ScriptEditorContextMenuID and get_ScriptEditorContextMenuGroup.
+
+          SqlScriptEditorControl::get_ScriptEditorContextMenuID returns 80 (0x0050) for an
+          ordinary query window, and only 1037 (= IDM_VS_CTXT_CODEWIN, what we were using)
+          when debugging or editing a SQL object document.
+
+          SqlScriptEditorControl::get_ScriptEditorContextMenuGroup falls through to
+          ScriptEditorControl::get_ScriptEditorContextMenuGroup, which returns
+          SQLWorkbenchCommands.GUID_SQLEditorGroup — the same GUID as the results-grid menu
+          (docs/resultsgrid-api.md), just a different id (0x0050 here vs 0x0070 there).
       -->
       <Group guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" priority="0x0700">
-        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
+        <Parent guid="guidSqlEditorGroup" id="IDM_SQLWB_SQLFILE_CONTEXT" />
       </Group>
     </Groups>
 
@@ -161,6 +174,7 @@
     -->
     <GuidSymbol name="guidSqlEditorGroup" value="{33F13AC3-80BB-4ECB-85BC-225435603A5E}">
       <IDSymbol name="IDM_SQLWB_SQLRESGRID_CONTEXT" value="0x0070" />
+      <IDSymbol name="IDM_SQLWB_SQLFILE_CONTEXT" value="0x0050" />
     </GuidSymbol>
 
     <GuidSymbol name="guidImages" value="{d3f2a1b0-6c9e-4d7a-8b1c-5e2f9a0d4c11}">
