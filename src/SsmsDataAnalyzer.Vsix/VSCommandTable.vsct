@@ -81,6 +81,8 @@
         <CommandFlag>DefaultInvisible</CommandFlag>
         <Strings>
           <ButtonText>Find...</ButtonText>
+          <CanonicalName>SsmsDataAnalyzer.FindInResults</CanonicalName>
+          <LocCanonicalName>SsmsDataAnalyzer.FindInResults</LocCanonicalName>
           <LocCanonicalName>.SsmsDataAnalyzer.GridFind</LocCanonicalName>
         </Strings>
       </Button>
@@ -98,6 +100,8 @@
         <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
         <Strings>
           <ButtonText>Paste as SQL IN (...)</ButtonText>
+          <CanonicalName>SsmsDataAnalyzer.PasteAsSqlIn</CanonicalName>
+          <LocCanonicalName>SsmsDataAnalyzer.PasteAsSqlIn</LocCanonicalName>
           <ToolTipText>Paste the clipboard's lines as a quoted T-SQL IN list.</ToolTipText>
         </Strings>
       </Button>
@@ -106,6 +110,8 @@
         <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
         <Strings>
           <ButtonText>Paste as numeric SQL IN (...)</ButtonText>
+          <CanonicalName>SsmsDataAnalyzer.PasteAsNumericSqlIn</CanonicalName>
+          <LocCanonicalName>SsmsDataAnalyzer.PasteAsNumericSqlIn</LocCanonicalName>
           <ToolTipText>Paste the clipboard's lines as an unquoted T-SQL IN list, for numbers.</ToolTipText>
         </Strings>
       </Button>

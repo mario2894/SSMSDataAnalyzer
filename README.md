@@ -190,6 +190,26 @@ The **numeric** variant leaves the quotes off, for ID columns and other numbers:
 )
 ```
 
+### Giving it a keyboard shortcut
+
+You can bind your own — no rebuild needed:
+
+**Tools → Options… → Environment → Keyboard**, type `SsmsDataAnalyzer` in
+*Show commands containing*, pick the command, click into *Press shortcut keys*, press the
+combination you want, then **Assign**.
+
+The commands are named:
+
+| Command | Name in the Keyboard list |
+|---|---|
+| Paste as SQL IN (...) | `SsmsDataAnalyzer.PasteAsSqlIn` |
+| Paste as numeric SQL IN (...) | `SsmsDataAnalyzer.PasteAsNumericSqlIn` |
+| Find in Results | `SsmsDataAnalyzer.FindInResults` |
+
+Set *Use new shortcut in* to **Text Editor** if you only want it inside query windows, or
+leave it on **Global**. The extension deliberately ships with **no** default shortcuts — a
+default would risk taking a key you already use for something else.
+
 It handles the awkward bits for you:
 
 - **Duplicates are removed** (and the status bar tells you how many).
