@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.9.1**
+**`SsmsDataAnalyzer.vsix` — version 0.9.2**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -30,6 +30,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.9.2** — "Paste as SQL IN" should now appear on the query editor's right-click menu as well as under Tools.
 
 **0.9.1** — Fixed the new "Paste as SQL IN" items not appearing on the query editor's right-click menu. Also added them to the **Tools** menu.
 

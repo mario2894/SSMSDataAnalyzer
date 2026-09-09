@@ -102,28 +102,8 @@
         </Strings>
       </Button>
 
-      <!-- Same command, also on the Tools menu: reachable even if the editor
-           context-menu placement ever stops merging. -->
-<Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsSqlIn" priority="0x0200" type="Button">
-        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
-        <Strings>
-          <ButtonText>Paste as SQL IN (...)</ButtonText>
-          <ToolTipText>Paste the clipboard's lines as a quoted T-SQL IN list.</ToolTipText>
-        </Strings>
-      </Button>
-
       <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0110" type="Button">
         <Parent guid="guidSsmsDataAnalyzerCommandSet" id="QueryEditorMenuGroup" />
-        <Strings>
-          <ButtonText>Paste as numeric SQL IN (...)</ButtonText>
-          <ToolTipText>Paste the clipboard's lines as an unquoted T-SQL IN list, for numbers.</ToolTipText>
-        </Strings>
-      </Button>
-
-      <!-- Same command, also on the Tools menu: reachable even if the editor
-           context-menu placement ever stops merging. -->
-<Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0210" type="Button">
-        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
         <Strings>
           <ButtonText>Paste as numeric SQL IN (...)</ButtonText>
           <ToolTipText>Paste the clipboard's lines as an unquoted T-SQL IN list, for numbers.</ToolTipText>
@@ -135,6 +115,22 @@
       <Bitmap guid="guidImages" href="Resources\DataAnalyzer.ico" usedList="bmpAnalyzeData" />
     </Bitmaps>
   </Commands>
+
+  <CommandPlacements>
+    <!--
+      A command is DEFINED once in <Buttons>. Putting it in a SECOND menu requires a
+      CommandPlacement — not a second <Button> element. v0.9.1 duplicated the Button blocks
+      instead; the later definition (Tools menu) won, which is exactly why these appeared under
+      Tools and NOT on the query editor's context menu.
+    -->
+    <CommandPlacement guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsSqlIn" priority="0x0200">
+      <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0210">
+      <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
+    </CommandPlacement>
+  </CommandPlacements>
+
 
   <Symbols>
     <!-- Keep numerically in sync with PackageGuids.cs / PackageIds.cs. -->
