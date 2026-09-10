@@ -268,6 +268,7 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
         /// "no connection" wording, so the banner can explain.</summary>
         private PivotFkLinks TryCaptureFkLinks(Microsoft.SqlServer.Management.UI.Grid.GridControl grid, string[] columnNames)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
                 Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl editor = null;
@@ -279,7 +280,10 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 var ci = editor?.Connection;
                 string database = null;
                 if (ci?.AdvancedOptions != null) database = ci.AdvancedOptions["DATABASE"];
-                string queryText = editor != null ? ResultsGridSourceCommand.GetSelectionOrFullText(editor) : null;
+                // Prefer the text that was executed (ExecutedQueryTextTracker), same as Go to source.
+                string queryText = editor != null
+                    ? ExecutedQueryTextTracker.TryGetForActiveDocument() ?? ResultsGridSourceCommand.GetSelectionOrFullText(editor)
+                    : null;
 
                 return new PivotFkLinks(_package, ci, database, queryText, columnNames);
             }

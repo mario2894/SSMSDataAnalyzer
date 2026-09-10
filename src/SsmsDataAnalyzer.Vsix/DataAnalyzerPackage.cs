@@ -102,6 +102,11 @@ namespace SsmsDataAnalyzer.Vsix
             var commandService = await GetServiceAsync(typeof(System.ComponentModel.Design.IMenuCommandService)) as OleMenuCommandService;
             QueryEditor.PasteAsSqlInCommand.Register(this, commandService);
 
+            // Remember the text each query window actually executed, so Go to source and pivot
+            // FK links describe what produced the grid, not whatever the editor holds by the
+            // time of the right-click (v0.13.2 field report). Same UI-thread context as Register.
+            ResultsGrid.ExecutedQueryTextTracker.Initialize(this);
+
             // v0.7.6 field report (SSMS 22.3 vs our 22.9 dev build): probe ONCE, here, rather
             // than waiting for the first results-grid right-click, so the ActivityLog carries
             // the answer from the very start of the session. ResultsGridCapability itself has

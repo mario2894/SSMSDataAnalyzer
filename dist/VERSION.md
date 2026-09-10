@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.13.1**
+**`SsmsDataAnalyzer.vsix` — version 0.13.2**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.13.2** — "Go to source" and pivot FK links now use the query text that was actually **run**, not whatever the query window holds when you right-click. Previously, editing or pasting into the window after running a query (for example pasting copied rows above it) made them decline with a syntax error.
 
 **0.13.1** — When "Go to source" or pivot FK links decline because SQL Server couldn't describe the query, the status bar now shows SQL Server's actual error number and message instead of a generic guess, so the cause can be found. (Shown on screen only, never written to logs.)
 

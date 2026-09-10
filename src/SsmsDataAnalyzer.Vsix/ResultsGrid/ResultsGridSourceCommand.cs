@@ -218,7 +218,11 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 var ci = cell.Editor?.Connection;
                 if (ci == null) { await ShowStatusAsync("Go to source: no connection available for this editor."); return; }
 
-                string tsql = GetSelectionOrFullText(cell.Editor);
+                // The text that was EXECUTED (see ExecutedQueryTextTracker) — the editor may have
+                // been edited since. Falls back to the current selection-or-full text. DTE and
+                // the editor are UI-thread objects.
+                await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
+                string tsql = ExecutedQueryTextTracker.TryGetForActiveDocument() ?? GetSelectionOrFullText(cell.Editor);
 
                 if (!GridConnectionInfo.TryBuild(ci, null, out var editorConnectionString))
                 {
