@@ -70,7 +70,24 @@ namespace SsmsDataAnalyzer.Tests.ResultShape
             var m = ResultShapeMatcher.Match(Batches(new[] { Col(0, null, table: null, hidden: null, error: 11525) }), 1, new[] { "Id" }, 0, null);
 
             Assert.False(m.IsMatch);
-            Assert.Equal("Go to source: the query text has 1 batch(es) and none produced a result matching this grid's 1 columns (1 errored (e.g. a selection or a later batch's temp table)) — declined rather than risk the wrong table.", m.DeclineMessage);
+            Assert.Equal("Go to source: the query text has 1 batch(es) and none produced a result matching this grid's 1 columns (1 errored — SQL Server error 11525) — declined rather than risk the wrong table.", m.DeclineMessage);
+        }
+
+        [Fact]
+        public void Match_ErrorRow_DeclineQuotesSqlServerMessage_Trimmed()
+        {
+            var errorRow = Col(0, null, table: null, hidden: null, error: 11529);
+            errorRow.ErrorMessage = "  The metadata could not be determined. " + new string('x', 300);
+
+            var m = ResultShapeMatcher.Match(Batches(new[] { errorRow }), 1, new[] { "Id" }, 0, null);
+
+            Assert.False(m.IsMatch);
+            Assert.Contains("(1 errored — SQL Server error 11529: The metadata could not be determined. ", m.DeclineMessage);
+            Assert.Contains("x…)", m.DeclineMessage);
+            // Trimmed to 200 characters of message, so the 300 x's never all appear.
+            Assert.DoesNotContain(new string('x', 200), m.DeclineMessage);
+            // Never logged: error text can quote the query, so it is not in the diagnostic dumps.
+            Assert.Empty(m.DiagnosticDumps);
         }
 
         [Fact]

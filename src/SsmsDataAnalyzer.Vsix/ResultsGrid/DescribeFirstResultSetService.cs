@@ -36,7 +36,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     internal static class DescribeFirstResultSetService
     {
         private const string DescribeSql = @"
-SELECT column_ordinal, name, source_database, source_schema, source_table, source_column, error_number, is_hidden, system_type_name, max_length
+SELECT column_ordinal, name, source_database, source_schema, source_table, source_column, error_number, is_hidden, system_type_name, max_length, error_message
 FROM sys.dm_exec_describe_first_result_set(@tsql, NULL, 1)
 ORDER BY column_ordinal;";
 
@@ -68,7 +68,9 @@ ORDER BY column_ordinal;";
                             // some types -- strip any parenthesized part, callers only need the bare
                             // type name to decide how to parse display text.
                             SystemTypeName = await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(true) ? null : StripTypeArgs(reader.GetString(8)),
-                            MaxLength = await reader.IsDBNullAsync(9, cancellationToken).ConfigureAwait(true) ? 0 : reader.GetInt16(9)
+                            MaxLength = await reader.IsDBNullAsync(9, cancellationToken).ConfigureAwait(true) ? 0 : reader.GetInt16(9),
+                            // Appended last in the SELECT so the ordinals above don't shift.
+                            ErrorMessage = await reader.IsDBNullAsync(10, cancellationToken).ConfigureAwait(true) ? null : reader.GetString(10)
                         });
                     }
                 }

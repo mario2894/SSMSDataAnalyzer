@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.13.0**
+**`SsmsDataAnalyzer.vsix` — version 0.13.1**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.13.1** — When "Go to source" or pivot FK links decline because SQL Server couldn't describe the query, the status bar now shows SQL Server's actual error number and message instead of a generic guess, so the cause can be found. (Shown on screen only, never written to logs.)
 
 **0.13.0** — Pivot extras: a **Header** dropdown labels each pivot column by a chosen column's value (e.g. `ID = 4522`) instead of `Row 7`; every pivot now opens in its own tab (Pivot 1, Pivot 2, …) instead of replacing the previous one; right-click → **Copy as Markdown table** copies what's currently shown, ready for Jira or Confluence. Also: "Go to source" no longer writes clicked cell values into SSMS's ActivityLog — the full message is still shown on the status bar.
 

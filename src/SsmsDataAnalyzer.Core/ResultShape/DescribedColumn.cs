@@ -14,6 +14,11 @@ namespace SsmsDataAnalyzer.Core.ResultShape
         public string SourceTable { get; set; }
         public string SourceColumn { get; set; }
         public int? ErrorNumber { get; set; }
+        /// <summary>SQL Server's own error text for an error row. Surfaced in the decline
+        /// message (status bar only — it can quote the query text, so it is never logged): a
+        /// field report on a 191-column SELECT * said only "1 errored", which couldn't be
+        /// reproduced locally or diagnosed without the actual error.</summary>
+        public string ErrorMessage { get; set; }
         public bool? IsHidden { get; set; }
         /// <summary>v0.8.0: this column's own SQL Server type name (e.g. "int", "varchar",
         /// "float") as the DM reports it -- needed now that the results grid only gives us

@@ -103,6 +103,7 @@ namespace SsmsDataAnalyzer.Core.ResultShape
             var nameMismatches = new List<(int BatchIndex, List<DescribedColumn> Rows, int MismatchOrdinal, string DescribedName, string GridName)>();
             var countMismatches = new List<(int BatchIndex, IReadOnlyList<DescribedColumn> AllRows, List<DescribedColumn> FilteredRows)>();
             int erroredCount = 0;
+            DescribedColumn firstError = null;
 
             for (int b = 0; b < batchCount; b++)
             {
@@ -110,7 +111,13 @@ namespace SsmsDataAnalyzer.Core.ResultShape
 
                 // Gate 3: error rows come back as ROWS; checked on the UNFILTERED rows (an
                 // error row's is_hidden is NULL, so filtering first would hide it).
-                if (allRows.Any(r => r.ErrorNumber != null)) { erroredCount++; continue; }
+                var errorRow = allRows.FirstOrDefault(r => r.ErrorNumber != null);
+                if (errorRow != null)
+                {
+                    erroredCount++;
+                    if (firstError == null) firstError = errorRow;
+                    continue;
+                }
 
                 // Drop browse-info rows (is_hidden = 1); what remains aligns 1:1 with the grid.
                 var rows = allRows.Where(r => r.IsHidden == false).OrderBy(r => r.Ordinal).ToList();
@@ -176,7 +183,7 @@ namespace SsmsDataAnalyzer.Core.ResultShape
             var parts = new List<string>();
             if (countMismatches.Count > 0) parts.Add($"{countMismatches.Count} had a different column count");
             if (nameMismatches.Count > 0) parts.Add($"{nameMismatches.Count} had different column names");
-            if (erroredCount > 0) parts.Add($"{erroredCount} errored (e.g. a selection or a later batch's temp table)");
+            if (erroredCount > 0) parts.Add($"{erroredCount} errored — {DescribeError(firstError)}");
             string detail = parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "";
             return ShapeMatch.Declined($"Go to source: the query text has {batchCount} batch(es) and none produced a result matching this grid's {numberOfDataColumns} columns{detail} — declined rather than risk the wrong table.", dumps);
         }
@@ -242,6 +249,22 @@ namespace SsmsDataAnalyzer.Core.ResultShape
                     return (ord, describedName, gridName);
             }
             return null;
+        }
+
+        /// <summary>"SQL Server error 11525: The metadata could not be determined because …",
+        /// trimmed. The real error replaces the old generic guess ("e.g. a selection or a later
+        /// batch's temp table"), which left a field report undiagnosable.</summary>
+        private static string DescribeError(DescribedColumn errorRow)
+        {
+            const int MaxMessageLength = 200;
+            string text = "SQL Server error " + errorRow.ErrorNumber.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string message = errorRow.ErrorMessage?.Trim();
+            if (!string.IsNullOrEmpty(message))
+            {
+                if (message.Length > MaxMessageLength) message = message.Substring(0, MaxMessageLength) + "…";
+                text += ": " + message;
+            }
+            return text;
         }
 
         private static string BatchDump(string reason, int batchIndex, int totalBatches, IReadOnlyList<DescribedColumn> allRows)

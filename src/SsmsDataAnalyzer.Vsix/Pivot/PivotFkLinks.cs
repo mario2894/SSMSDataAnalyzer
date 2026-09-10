@@ -192,7 +192,8 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
         {
             try
             {
-                if (DeclineReason != null) { await _owner.ShowStatusAsync(DeclineReason, log: true); return; }
+                // Not logged: a decline can now carry SQL Server's error text, which may quote the query.
+                if (DeclineReason != null) { await _owner.ShowStatusAsync(DeclineReason, log: false); return; }
 
                 var c = Get(gridOrdinal);
                 if (c == null) { await _owner.ShowStatusAsync("Go to source: could not match this column to the described query.", log: true); return; }
