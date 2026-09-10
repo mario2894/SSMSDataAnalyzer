@@ -293,6 +293,7 @@ can add your own:
 
 | Command | Name in the Keyboard list |
 |---|---|
+| Go to source for this value | `SsmsDataAnalyzer.GoToSourceForValue` — uses the cell selected in the results grid |
 | Find… (in query results) | `SsmsDataAnalyzer.FindInResults` |
 | Pivot selected rows… | `SsmsDataAnalyzer.PivotRows` |
 | Paste as SQL IN (...) | `SsmsDataAnalyzer.PasteAsSqlIn` |

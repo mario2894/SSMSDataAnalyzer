@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.13.2**
+**`SsmsDataAnalyzer.vsix` — version 0.13.3**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.13.3** — A keyboard shortcut assigned to **Go to source for this value** now works: it uses the grid's current cell (the one you last clicked or moved to with the arrow keys). Previously it looked for a cell under the mouse pointer, so a shortcut did nothing unless the pointer happened to be over the right cell. Go to source always follows one value; when several cells are selected, the status bar says which row it used.
 
 **0.13.2** — "Go to source" and pivot FK links now use the query text that was actually **run**, not whatever the query window holds when you right-click. Previously, editing or pasting into the window after running a query (for example pasting copied rows above it) made them decline with a syntax error.
 

@@ -265,7 +265,13 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 {
                     // The success text names the filter value ("... = 17") — status bar only.
                     OeDiagnostics.Info("Go to source: opened a query window for the referenced row.");
-                    await ShowStatusAsync(result.StatusMessage, log: false);
+                    // With several cells selected, say which row's value was used — Go to source
+                    // always follows exactly one value (the clicked cell, or the current cell for
+                    // a keyboard shortcut). A row number is not cell data.
+                    string rowNote = cell.SelectionHasMultipleCells
+                        ? " (value from row " + (cell.Row + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"
+                        : string.Empty;
+                    await ShowStatusAsync(result.StatusMessage + rowNote, log: false);
                 }
                 else
                 {

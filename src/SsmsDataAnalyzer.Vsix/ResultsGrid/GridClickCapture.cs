@@ -27,6 +27,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// <summary>Display text (was a typed value pre-v0.8.0 — see docs/newer-grid-api.md).</summary>
         public object Value;
         public int NumberOfDataColumns;
+        /// <summary>More than one cell was selected when the command ran. Go to source still
+        /// uses exactly one value (the clicked or current cell), so the status bar names the
+        /// row it came from rather than leaving the user to guess.</summary>
+        public bool SelectionHasMultipleCells;
         /// <summary>Every data column's name, in grid order (index 0 = grid column 1) —
         /// needed to full-shape-match a described batch against the WHOLE grid, not just the
         /// clicked column (v0.7.4, see ResultsGridGoToSourceResolver).</summary>
@@ -97,6 +101,26 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             }
         }
 
+        /// <summary>True when the selection covers more than one cell (a block wider or taller
+        /// than one cell, or several blocks). Best effort: any failure reads as "single".</summary>
+        private static bool HasMultipleSelectedCells(GridControl grid)
+        {
+            try
+            {
+                int blocks = 0;
+                foreach (Microsoft.SqlServer.Management.UI.Grid.BlockOfCells block in grid.SelectedCells)
+                {
+                    if (block == null || block.IsEmpty) continue;
+                    if (block.Right > block.X || block.Bottom > block.Y) return true;
+                    if (++blocks > 1) return true;
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
         public static bool TryCapture(out ClickedGridCell cell, out string declineReason)
         {
             cell = null;
@@ -113,11 +137,31 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 // Index convention (re-verified live for the portable API — see the class doc
                 // comment): HitTest/GetCellDataAsString/GetHeaderInfo all take the SAME GRID
                 // column index; 0 is the row-number gutter.
+                // Which cell? From the context menu it's the one under the mouse. From a keyboard
+                // shortcut (v0.13.3 field report: Ctrl+Shift+đ did nothing) the mouse can be
+                // anywhere — use the grid's current cell instead, the one the keyboard focus is
+                // on. A modifier held while VS queries command status means a shortcut; a
+                // right-click carries none. Same rule as PivotRowsCommand's right-click capture.
+                long hitRow;
+                int hitCol;
                 var p = focused.PointToClient(Control.MousePosition);
-                var hit = focused.HitTest(p.X, p.Y);
-                if (hit == null || hit.ColumnIndex < 1 || hit.RowIndex < 0)
+                bool keyboardInvoked = Control.ModifierKeys != Keys.None || !focused.ClientRectangle.Contains(p);
+                if (keyboardInvoked)
                 {
-                    declineReason = "not over a data cell";
+                    // The current cell is the one with the focus rectangle: the last cell clicked
+                    // or moved to with the arrow keys, even inside a multi-cell selection.
+                    focused.GetCurrentCell(out hitRow, out hitCol);
+                }
+                else
+                {
+                    var mouseHit = focused.HitTest(p.X, p.Y);
+                    hitRow = mouseHit?.RowIndex ?? -1;
+                    hitCol = mouseHit?.ColumnIndex ?? -1;
+                }
+
+                if (hitCol < 1 || hitRow < 0)
+                {
+                    declineReason = keyboardInvoked ? "no current data cell in the grid" : "not over a data cell";
                     return false;
                 }
 
@@ -131,7 +175,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 // ColumnsNumber counts the gutter too (see class doc comment) — 1..N are the
                 // real data columns.
                 int numberOfDataColumns = focused.ColumnsNumber - 1;
-                if (hit.ColumnIndex > numberOfDataColumns)
+                if (hitCol > numberOfDataColumns)
                 {
                     declineReason = "column index out of range";
                     return false;
@@ -163,7 +207,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 
                 // GetHeaderInfo shares HitTest's index space directly (see class doc comment)
                 // — column 1..N, no -1 translation, unlike the old ColumnNames[dataIndex].
-                string clickedColumnName = GetHeaderText(focused, hit.ColumnIndex);
+                string clickedColumnName = GetHeaderText(focused, hitCol);
                 var allColumnNames = new string[numberOfDataColumns];
                 for (int i = 0; i < numberOfDataColumns; i++)
                 {
@@ -173,12 +217,13 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 cell = new ClickedGridCell
                 {
                     Grid = focused,
-                    Row = hit.RowIndex,
-                    GridCol = hit.ColumnIndex,
+                    Row = hitRow,
+                    GridCol = hitCol,
                     ColumnName = clickedColumnName,
                     AllColumnNames = allColumnNames,
-                    Value = storage.GetCellDataAsString(hit.RowIndex, hit.ColumnIndex), // display text, not a typed value — see docs/newer-grid-api.md
+                    Value = storage.GetCellDataAsString(hitRow, hitCol), // display text, not a typed value — see docs/newer-grid-api.md
                     NumberOfDataColumns = numberOfDataColumns,
+                    SelectionHasMultipleCells = HasMultipleSelectedCells(focused),
                     Editor = editor
                 };
                 return true;
