@@ -37,6 +37,9 @@
         <SolidColorBrush x:Key="FkStatusTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemGrayTextColorKey}}" />
         <!-- Icon hover tint: the same highlight hue as DifferRowBrush, a bit stronger so it
              still shows on a differing (already tinted) row. -->
+        <!-- v0.12.1: vertical grid lines. Without them an icon at a cell's right edge sat
+             against the NEXT column's value and read as pointing at it (field screenshot). -->
+        <SolidColorBrush x:Key="PivotGridLineBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemGrayTextColorKey}}" Opacity="0.30" />
         <SolidColorBrush x:Key="FkIconHoverBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" Opacity="0.40" />
 
         <local:PivotFkVisibilityConverter x:Key="FkVisibilityConverter" />
@@ -152,7 +155,9 @@
                   EnableRowVirtualization="True" EnableColumnVirtualization="True"
                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                   SelectionUnit="Cell" SelectionMode="Extended" ClipboardCopyMode="ExcludeHeader"
-                  GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                  GridLinesVisibility="All" HeadersVisibility="Column"
+                  HorizontalGridLinesBrush="{StaticResource PivotGridLineBrush}"
+                  VerticalGridLinesBrush="{StaticResource PivotGridLineBrush}"
                   FrozenColumnCount="1">
             <DataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
@@ -181,12 +186,12 @@
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <DockPanel LastChildFill="True">
-                                <TextBlock DockPanel.Dock="Right" Margin="4,0,0,0" VerticalAlignment="Center"
+                                <TextBlock DockPanel.Dock="Right" Margin="6,0,4,0" VerticalAlignment="Center"
                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11"
                                            Text="&#xE71B;" Foreground="{StaticResource FkIconBrush}"
                                            Visibility="{Binding IsLinkColumn, Mode=OneWay, Converter={StaticResource FkVisibilityConverter}}"
                                            ToolTip="{Binding TargetText, Mode=OneWay}" />
-                                <TextBlock Text="{Binding DisplayName, Mode=OneWay}" VerticalAlignment="Center"
+                                <TextBlock Text="{Binding DisplayName, Mode=OneWay}" VerticalAlignment="Center" Margin="4,0,0,0"
                                            TextTrimming="CharacterEllipsis" />
                             </DockPanel>
                         </DataTemplate>

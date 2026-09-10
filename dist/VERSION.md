@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.12.0**
+**`SsmsDataAnalyzer.vsix` — version 0.12.1**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.12.1** — Pivot look: cells now have vertical grid lines and the link icon has space around it, so it clearly belongs to its own value instead of seeming to point at the next column. The icon is now "open in new window" rather than an arrow.
 
 **0.12.0** — Pivot: foreign-key columns now get a small arrow inside each cell (like DBeaver). Click it to open the linked record in a new, connected query window — the same as **Go to source…**. FK column names show a link marker, and hovering the arrow shows where it goes. Right-click a pivot cell → **Go to source…** does the same from the keyboard. If the query can't be traced back to its tables, the pivot says why and simply shows no arrows.
 

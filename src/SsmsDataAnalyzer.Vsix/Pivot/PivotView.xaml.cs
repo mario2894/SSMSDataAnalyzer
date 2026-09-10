@@ -114,11 +114,14 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             textFactory.SetBinding(TextBlock.TextProperty, new Binding(valuePath) { Mode = BindingMode.OneWay });
             textFactory.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
             textFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+            textFactory.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 0, 0));
 
             var glyphFactory = new FrameworkElementFactory(typeof(TextBlock));
-            // U+E72A (a forward-arrow / ChevronRight glyph in Segoe Fluent Icons / Segoe MDL2
-            // Assets) -- the "go to source" icon (docs/pivot-plan.md section 12 / section 5 item 5).
-            glyphFactory.SetValue(TextBlock.TextProperty, "");
+            // The "go to source" icon (docs/pivot-plan.md §12 / §5 item 5): U+E8A7
+            // "OpenInNewWindow" in Segoe Fluent Icons / Segoe MDL2 Assets, which is what a click
+            // does. v0.12.0 used a right arrow, which at the cell edge read as pointing at the
+            // next column's value (field screenshot, v0.12.1).
+            glyphFactory.SetValue(TextBlock.TextProperty, "\uE8A7");
             glyphFactory.SetValue(TextBlock.FontFamilyProperty, FkIconFontFamily);
             glyphFactory.SetValue(TextBlock.FontSizeProperty, 11.0);
             glyphFactory.SetValue(TextBlock.ForegroundProperty, (System.Windows.Media.Brush)FindResource("FkIconBrush"));
@@ -129,7 +132,9 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             iconFactory.SetValue(DockPanel.DockProperty, Dock.Right);
             iconFactory.SetValue(FrameworkElement.WidthProperty, 16.0);
             iconFactory.SetValue(FrameworkElement.HeightProperty, 16.0);
-            iconFactory.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 0, 0));
+            // Gap on both sides: the right gap keeps the icon off the grid line, so it reads as
+            // belonging to this cell's value rather than the next column's (v0.12.1).
+            iconFactory.SetValue(FrameworkElement.MarginProperty, new Thickness(6, 0, 4, 0));
             iconFactory.SetValue(UIElement.FocusableProperty, false);
             iconFactory.SetValue(KeyboardNavigation.IsTabStopProperty, false);
             iconFactory.SetValue(Control.CursorProperty, Cursors.Hand);
