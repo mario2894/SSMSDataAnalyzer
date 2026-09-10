@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vsp="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:local="clr-namespace:SsmsDataAnalyzer.Vsix.Pivot"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="800"
              Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
@@ -21,22 +22,62 @@
             Truncated-banner brushes: full-strength SystemHighlight pair (background + its
             matching text colour, guaranteed readable together by VS's own theme design) so a
             truncated pivot is unmistakable at a glance, not just a caveat in small print.
+
+            FK brushes (docs/pivot-plan.md §12): FkIconBrush colors both the 🔗 column marker
+            and the per-cell "go to source" glyph — a VS hyperlink-ish theme colour so it reads
+            as "this is a link" in both light and dark. FkStatusTextBrush is the plain
+            theme-gray used for the "FK links unavailable: ..." line, deliberately NOT the
+            truncated-banner highlight pair above (that pair means "you're missing rows", this
+            means "no FK icons this time" — different severities).
         -->
         <SolidColorBrush x:Key="DifferRowBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" Opacity="0.20" />
         <SolidColorBrush x:Key="TruncatedBannerBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" />
         <SolidColorBrush x:Key="TruncatedBannerTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightTextColorKey}}" />
+        <SolidColorBrush x:Key="FkIconBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.PanelHyperlinkColorKey}}" />
+        <SolidColorBrush x:Key="FkStatusTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemGrayTextColorKey}}" />
+        <!-- Icon hover tint: the same highlight hue as DifferRowBrush, a bit stronger so it
+             still shows on a differing (already tinted) row. -->
+        <SolidColorBrush x:Key="FkIconHoverBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" Opacity="0.40" />
+
+        <local:PivotFkVisibilityConverter x:Key="FkVisibilityConverter" />
+        <local:PivotFkGoTooltipConverter x:Key="FkGoTooltipConverter" />
+
+        <!-- Flat icon button (plan §12 / §5 item 5): no chrome, hover tint from theme, never a
+             tab stop (Focusable/IsTabStop are set in code-behind alongside this style, since
+             the per-cell button is built dynamically in PivotView.xaml.cs). -->
+        <Style x:Key="FkIconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="FkIconButtonBorder" Background="{TemplateBinding Background}" CornerRadius="2" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="FkIconButtonBorder" Property="Background" Value="{StaticResource FkIconHoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="6">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Banner: "Showing X of Y selected rows · N columns · D differ" (plan §1/§3). When
-             Truncated, the border/text switch to the full-strength highlight pair above so a
-             truncated pivot is visually noticeable, not just a number the user has to read. -->
+        <!-- Banner: "Showing X of Y selected rows · N columns · D differ" (plan §1/§3), plus a
+             §12 FK suffix (" · resolving FK links…" / " · N FK links"). When Truncated, the
+             border/text switch to the full-strength highlight pair above so a truncated pivot
+             is visually noticeable, not just a number the user has to read. -->
         <Border Grid.Row="0" Padding="6,3" Margin="0,0,0,4" CornerRadius="2">
             <Border.Style>
                 <Style TargetType="Border">
@@ -62,8 +103,26 @@
             </TextBlock>
         </Border>
 
+        <!-- §12 FK decline line: "FK links unavailable: ..." in plain theme-gray text, shown
+             only while FkStatusText is non-empty (i.e. the whole pivot's FK resolution
+             declined). Deliberately its own line/brush, not folded into the banner above, so
+             it never picks up the truncated-banner highlight styling. -->
+        <TextBlock Grid.Row="1" Text="{Binding FkStatusText}" Foreground="{StaticResource FkStatusTextBrush}"
+                   Margin="0,0,0,4" TextTrimming="CharacterEllipsis">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding FkStatusText.Length}" Value="0">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
         <!-- Phase 2 toggles + column-name filter (plan §4 items 8-10). -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,4">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,4">
             <CheckBox Content="Show only differing columns" IsChecked="{Binding ShowOnlyDiffering}" Margin="0,0,14,0" VerticalAlignment="Center" />
             <CheckBox Content="Hide all-NULL columns" IsChecked="{Binding HideAllNull}" Margin="0,0,14,0" VerticalAlignment="Center" />
             <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,4,0" />
@@ -87,7 +146,7 @@
             "differs" highlight would silently vanish on every other row, which is the one
             thing this window exists to show.
         -->
-        <DataGrid x:Name="PivotGrid" Grid.Row="2" ItemsSource="{Binding Items}"
+        <DataGrid x:Name="PivotGrid" Grid.Row="3" ItemsSource="{Binding Items}"
                   AutoGenerateColumns="False" IsReadOnly="True"
                   CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False"
                   EnableRowVirtualization="True" EnableColumnVirtualization="True"
@@ -104,8 +163,35 @@
                     </Style.Triggers>
                 </Style>
             </DataGrid.RowStyle>
+            <!-- §12 / plan §4 item 13 "Go to source…" alternative for keyboard users — the
+                 icon in the value-cell template below is mouse-only (not a tab stop). Enabled
+                 only when the current cell is a value cell whose column+value CanGo; computed
+                 in code-behind on Opened, since that needs DataGrid.CurrentCell. -->
+            <DataGrid.ContextMenu>
+                <ContextMenu Opened="PivotGridContextMenu_Opened">
+                    <MenuItem x:Name="GoToSourceMenuItem" Header="Go to source…" Click="GoToSourceMenuItem_Click" IsEnabled="False" />
+                </ContextMenu>
+            </DataGrid.ContextMenu>
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Column" Binding="{Binding DisplayName, Mode=OneWay}" Width="180" />
+                <!-- "Column" cell: name text plus a 🔗-style marker at the right when
+                     PivotRowItem.IsLinkColumn (plan §12 item 4). ClipboardContentBinding is
+                     required once this is a DataGridTemplateColumn — DataGridTextColumn
+                     supplied it implicitly before, a DataGridTemplateColumn does not. -->
+                <DataGridTemplateColumn Header="Column" Width="180" ClipboardContentBinding="{Binding DisplayName, Mode=OneWay}">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Right" Margin="4,0,0,0" VerticalAlignment="Center"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11"
+                                           Text="&#xE71B;" Foreground="{StaticResource FkIconBrush}"
+                                           Visibility="{Binding IsLinkColumn, Mode=OneWay, Converter={StaticResource FkVisibilityConverter}}"
+                                           ToolTip="{Binding TargetText, Mode=OneWay}" />
+                                <TextBlock Text="{Binding DisplayName, Mode=OneWay}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </Grid>

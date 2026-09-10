@@ -284,7 +284,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// behaviour rather than failing the command outright — worse selection fidelity, not
         /// a broken feature, if a future SSMS servicing update renames or removes it.
         /// </summary>
-        private static string GetSelectionOrFullText(Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl editor)
+        internal static string GetSelectionOrFullText(Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl editor)
         {
             try
             {

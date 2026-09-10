@@ -249,13 +249,48 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 rowLimit,
                 (row, gridOrdinal) => storage.GetCellDataAsString(row, gridOrdinal));
 
+            // docs/pivot-plan.md §12: capture (no database access) what the FK link icons need,
+            // at the same moment as the values. Null on any capture failure — the pivot itself
+            // must never depend on it.
+            var fkLinks = TryCaptureFkLinks(grid, columnNames);
+
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                await ShowResultAsync(result);
+                await ShowResultAsync(result, fkLinks);
             }).FileAndForget("SsmsDataAnalyzer/Pivot/PivotRowsCommand/Execute");
         }
 
-        private async Task ShowResultAsync(PivotResult result)
+        /// <summary>CORE (reached only from ExecuteCore). Reads the source editor the same way
+        /// Go to source does: the grid's parent SqlScriptEditorControl (GridClickCapture's walk),
+        /// its UIConnectionInfo (kept as the object itself — CONTRACT.md Amendment 13), its
+        /// current database, and ResultsGridSourceCommand.GetSelectionOrFullText. An editor that
+        /// can't be found still yields an instance whose resolution declines with Go to source's
+        /// "no connection" wording, so the banner can explain.</summary>
+        private PivotFkLinks TryCaptureFkLinks(Microsoft.SqlServer.Management.UI.Grid.GridControl grid, string[] columnNames)
+        {
+            try
+            {
+                Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl editor = null;
+                for (System.Windows.Forms.Control cursor = grid; cursor != null; cursor = cursor.Parent)
+                {
+                    if (cursor is Microsoft.SqlServer.Management.UI.VSIntegration.Editors.SqlScriptEditorControl sse) { editor = sse; break; }
+                }
+
+                var ci = editor?.Connection;
+                string database = null;
+                if (ci?.AdvancedOptions != null) database = ci.AdvancedOptions["DATABASE"];
+                string queryText = editor != null ? ResultsGridSourceCommand.GetSelectionOrFullText(editor) : null;
+
+                return new PivotFkLinks(_package, ci, database, queryText, columnNames);
+            }
+            catch (Exception ex)
+            {
+                OeDiagnostics.Error("'Pivot selected rows': capturing FK link context failed (pivot continues without links)", ex);
+                return null;
+            }
+        }
+
+        private async Task ShowResultAsync(PivotResult result, PivotFkLinks fkLinks)
         {
             await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
 
@@ -272,7 +307,7 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 return;
             }
 
-            pane.Bind(result);
+            pane.Bind(result, fkLinks);
         }
 
         /// <summary>IGridControl.GetHeaderInfo's real signature takes `out` params — mirrors

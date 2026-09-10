@@ -1,7 +1,9 @@
 # Pivot selected rows — development plan
 
 Status: **Phase 1 + 2 shipped and confirmed live (v0.11.0 / v0.11.1).** Phase 3 **item 13 (FK
-link icons) in progress** (user go-ahead 2026-09-10; items 11, 12, 14 not requested).
+link icons) shipped in v0.12.0, awaiting live check** (user go-ahead 2026-09-10; items 11,
+12, 14 not requested). U2 hit a usage limit before building; the lead finished it (fixed a
+non-existent theme brush key and added UI-thread guards).
 Decisions D1–D3 were built as recommended; D4 is resolved: FK icons are done as Phase 3,
 after Phases 1 and 2 shipped. Team: R1 (Opus) → U2 (Sonnet), interface in §12 (written by
 R1, reviewed by the lead before U2 starts).
@@ -421,4 +423,73 @@ Pitfalls (all learned the hard way in this repo):
   click, the limit, the snapshot note, and the NULL caveat.
 - Add a keyboard-shortcut row and a VERSION entry from the lead's bullet list.
 - Change nothing else.
+
+## 12. Frozen interface — FK link icons
+
+Written by R1, for U2. Namespace `SsmsDataAnalyzer.Vsix.Pivot`, file `Pivot/PivotFkLinks.cs`
+(R1-owned; report needed changes). Grid ordinals are `PivotColumn.GridOrdinal` (1-based).
+Neither type references GridControl/SqlScriptEditorControl, so the view model may hold them.
+
+```csharp
+internal sealed class PivotFkLinks            // created by PivotRowsCommand, no DB access yet
+{
+    /// Describe (one call per GO batch) + FK lookup for every column. Call ONCE per pivot.
+    /// Never throws for a failure (-> map.DeclineReason). Throws OperationCanceledException
+    /// only when the token fires. Async I/O; fine to await on the UI thread.
+    public Task<PivotFkLinkMap> ResolveAsync(CancellationToken cancellationToken);
+}
+
+internal sealed class PivotFkLinkMap          // immutable; all members cheap
+{
+    public string DeclineReason { get; }      // whole-pivot failure, Go to source wording
+                                              // ("Go to source: ..."); null = resolved
+    public int LinkColumnCount { get; }
+    public bool   IsLinkColumn(int gridOrdinal);            // 🔗 marker on the name cell
+    public string GetTargetText(int gridOrdinal);           // "[ref].[ParentSingle].[Id]" or null
+    public string GetColumnDeclineReason(int gridOrdinal);  // why not a link (optional tooltip)
+    public bool   CanGo(int gridOrdinal, string cellDisplayText); // show the ➜ icon for this cell?
+    public Task   GoAsync(int gridOrdinal, string cellDisplayText); // never throws
+    public void   BeginGo(int gridOrdinal, string cellDisplayText); // fire-and-forget, UI thread
+}
+
+// PivotToolWindow (R1 added):
+internal void Bind(PivotResult result, PivotFkLinks fkLinks);   // fkLinks may be null
+internal void Bind(PivotResult result);                          // == Bind(result, null)
+```
+
+**Lifecycle (U2 implements):**
+
+- `PivotToolWindow.Bind(result, fkLinks)` currently stores `fkLinks` and calls
+  `_view.Bind(result)`. U2 changes that one line to forward `fkLinks` to the view
+  (ownership of that line moves to U2).
+- **U2's view model starts resolution:** show values immediately. If `fkLinks != null`, call
+  `ResolveAsync` with a `CancellationTokenSource` that is cancelled on the next `Bind` and when
+  the window closes. Swallow `OperationCanceledException`. Ignore a result that arrives for
+  an older snapshot.
+- `fkLinks == null` or `DeclineReason != null` → no icons, no markers. Banner text:
+  `"FK links unavailable: " + DeclineReason` (optionally strip the leading "Go to source: ").
+- Resolved → marker when `IsLinkColumn`, icon when `CanGo(ordinal, value)`. Evaluate `CanGo`
+  with the exact string from `PivotResult.Values`. Tooltip:
+  `"Go to " + GetTargetText(ordinal) + " = " + value` (UI only, never logged).
+- Icon click → `map.BeginGo(ordinal, value)`. It does everything Go to source does: status-bar
+  messages, a new connected window, and auto-execute per `AutoExecuteGoToSourceQuery`.
+  U2 adds no messaging of its own.
+- Never log or put cell values into exceptions or diagnostics.
+
+**Behavior decided by R1 (mirrors Go to source; do not re-implement):**
+
+- Link = base column (alias allowed) with exactly one single-column declared FK that every
+  shape-matching batch agrees on.
+- No link for:
+  - computed expressions
+  - composite FKs
+  - columns with multiple FKs (Go to source declines these today)
+  - PK or plain columns
+- `CanGo` is false for:
+  - the text "NULL"
+  - float, real, binary or MAX types
+  - unparseable text
+- Resolution uses the query text, `UIConnectionInfo` and current database captured at pivot
+  time. It keeps working after the source tab is closed or re-run. If the connection is gone,
+  `GoAsync` shows the status-bar failure.
 

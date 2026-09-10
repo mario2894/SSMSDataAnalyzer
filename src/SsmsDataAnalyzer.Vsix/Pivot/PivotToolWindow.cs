@@ -46,6 +46,38 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
 
         /// <summary>The single authoritative way to (re)target this window at a fresh pivot
         /// snapshot. Internal: the only caller is PivotRowsCommand in this same assembly.</summary>
-        internal void Bind(PivotResult result) => _view.Bind(result);
+        internal void Bind(PivotResult result)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Bind(result, null);
+        }
+
+        /// <summary>docs/pivot-plan.md §12: same as <see cref="Bind(PivotResult)"/>, plus the
+        /// FK link engine for this snapshot (null = no links; the pivot works exactly as
+        /// before). The plain values are shown immediately either way.</summary>
+        internal void Bind(PivotResult result, PivotFkLinks fkLinks)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            FkLinks = fkLinks;
+            _view.Bind(result, fkLinks);
+        }
+
+        /// <summary>The FK link engine of the currently bound snapshot, or null.</summary>
+        internal PivotFkLinks FkLinks { get; private set; }
+
+        /// <summary>docs/pivot-plan.md §12: cancels any in-flight FK resolution when this pane
+        /// is closed/disposed, so a describe call for a window that's gone doesn't keep the
+        /// connection open or try to touch UI that no longer exists.</summary>
+        protected override void Dispose(bool disposing)
+        {
+            // Pane disposal happens on the UI thread (VS closes tool windows there).
+            if (disposing)
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                _view.CancelPendingResolve();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

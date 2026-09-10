@@ -1,15 +1,30 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
+using Microsoft.VisualStudio.Shell;
 using SsmsDataAnalyzer.Core.Pivot;
 
 namespace SsmsDataAnalyzer.Vsix.Pivot
 {
-    /// <summary>Code-behind for PivotView.xaml — owns the one thing that can't be done
-    /// declaratively: the "Row N" DataGrid columns, whose count changes with every pivot.</summary>
+    /// <summary>Code-behind for PivotView.xaml — owns the "Row N" DataGrid columns, whose
+    /// count changes with every pivot, and (docs/pivot-plan.md §12) the FK "go to source" icon
+    /// wired into each of those columns' cell templates plus the context-menu alternative.</summary>
     public partial class PivotView : UserControl
     {
+        private static readonly PivotFkVisibilityConverter FkVisibilityConverter = new PivotFkVisibilityConverter();
+        private static readonly PivotFkGoTooltipConverter FkGoTooltipConverter = new PivotFkGoTooltipConverter();
+        private static readonly FontFamily FkIconFontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
+
         private readonly PivotViewModel _viewModel;
+
+        // §12 context-menu "Go to source…": set by PivotGridContextMenu_Opened, consumed by
+        // GoToSourceMenuItem_Click. Never holds a cell value — only the row object + index.
+        private PivotRowItem _contextMenuRow;
+        private int _contextMenuRowIndex = -1;
 
         public PivotView()
         {
@@ -20,8 +35,28 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
         }
 
         /// <summary>The single authoritative way PivotToolWindow (re)targets this view at a
-        /// fresh pivot snapshot.</summary>
-        internal void Bind(PivotResult result) => _viewModel.Load(result);
+        /// fresh pivot snapshot, with no FK engine.</summary>
+        internal void Bind(PivotResult result)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _viewModel.Load(result, null);
+        }
+
+        /// <summary>docs/pivot-plan.md §12: same, plus the FK link engine for this snapshot
+        /// (null = no links).</summary>
+        internal void Bind(PivotResult result, PivotFkLinks fkLinks)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _viewModel.Load(result, fkLinks);
+        }
+
+        /// <summary>Called from PivotToolWindow's close/dispose path (§12) to cancel any
+        /// in-flight FK resolution for the currently bound snapshot.</summary>
+        internal void CancelPendingResolve()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _viewModel.CancelPendingResolve();
+        }
 
         /// <summary>Invoked by PivotToolWindow's pane-local Edit.Copy handler. Only acts when
         /// the grid itself has focus — in the filter TextBox Ctrl+C must copy the TextBox's
@@ -56,19 +91,122 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
 
             var rows = _viewModel.Rows;
             for (var i = 0; i < rows.Count; i++)
+                PivotGrid.Columns.Add(BuildValueColumn(i, rows[i]));
+        }
+
+        /// <summary>
+        /// Builds one "Row N" column as a DataGridTemplateColumn: a DockPanel with the value
+        /// text filling the left (same TextTrimming/single-line look as the old
+        /// DataGridTextColumn) and a small flat "go to source" icon docked right, visible only
+        /// when PivotRowItem.CanGoFlags[rowIndex] is true (docs/pivot-plan.md §12 / §5 item 5).
+        /// Built with FrameworkElementFactory, not a parsed XAML string, so the row index can
+        /// be baked into each binding path ("Values[i]" / "CanGoFlags[i]") without needing a
+        /// per-column converter — CanGoFlags is computed once per pivot in the view model, not
+        /// re-evaluated on every layout pass.
+        /// </summary>
+        private DataGridTemplateColumn BuildValueColumn(int rowIndex, long gridRow)
+        {
+            var indexText = rowIndex.ToString(CultureInfo.InvariantCulture);
+            var valuePath = "Values[" + indexText + "]";
+            var canGoPath = "CanGoFlags[" + indexText + "]";
+
+            var textFactory = new FrameworkElementFactory(typeof(TextBlock));
+            textFactory.SetBinding(TextBlock.TextProperty, new Binding(valuePath) { Mode = BindingMode.OneWay });
+            textFactory.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+            textFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            var glyphFactory = new FrameworkElementFactory(typeof(TextBlock));
+            // U+E72A (a forward-arrow / ChevronRight glyph in Segoe Fluent Icons / Segoe MDL2
+            // Assets) -- the "go to source" icon (docs/pivot-plan.md section 12 / section 5 item 5).
+            glyphFactory.SetValue(TextBlock.TextProperty, "");
+            glyphFactory.SetValue(TextBlock.FontFamilyProperty, FkIconFontFamily);
+            glyphFactory.SetValue(TextBlock.FontSizeProperty, 11.0);
+            glyphFactory.SetValue(TextBlock.ForegroundProperty, (System.Windows.Media.Brush)FindResource("FkIconBrush"));
+            glyphFactory.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            glyphFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            var iconFactory = new FrameworkElementFactory(typeof(Button));
+            iconFactory.SetValue(DockPanel.DockProperty, Dock.Right);
+            iconFactory.SetValue(FrameworkElement.WidthProperty, 16.0);
+            iconFactory.SetValue(FrameworkElement.HeightProperty, 16.0);
+            iconFactory.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 0, 0));
+            iconFactory.SetValue(UIElement.FocusableProperty, false);
+            iconFactory.SetValue(KeyboardNavigation.IsTabStopProperty, false);
+            iconFactory.SetValue(Control.CursorProperty, Cursors.Hand);
+            iconFactory.SetValue(Control.StyleProperty, (Style)FindResource("FkIconButtonStyle"));
+            iconFactory.SetValue(FrameworkElement.TagProperty, rowIndex);
+            iconFactory.SetBinding(UIElement.VisibilityProperty,
+                new Binding(canGoPath) { Mode = BindingMode.OneWay, Converter = FkVisibilityConverter });
+
+            var tooltipBinding = new MultiBinding { Mode = BindingMode.OneWay, Converter = FkGoTooltipConverter };
+            tooltipBinding.Bindings.Add(new Binding("TargetText") { Mode = BindingMode.OneWay });
+            tooltipBinding.Bindings.Add(new Binding(valuePath) { Mode = BindingMode.OneWay });
+            iconFactory.SetBinding(FrameworkElement.ToolTipProperty, tooltipBinding);
+
+            iconFactory.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler(OnFkIconClick));
+            iconFactory.AppendChild(glyphFactory);
+
+            var panelFactory = new FrameworkElementFactory(typeof(DockPanel));
+            panelFactory.SetValue(DockPanel.LastChildFillProperty, true);
+            // Icon appended first (docked Right, doesn't fill) so the text — appended last —
+            // is the one DockPanel stretches to fill the remaining width.
+            panelFactory.AppendChild(iconFactory);
+            panelFactory.AppendChild(textFactory);
+
+            return new DataGridTemplateColumn
             {
-                var column = new DataGridTextColumn
+                Header = "Row " + (gridRow + 1).ToString(CultureInfo.InvariantCulture),
+                Width = 110,
+                CellTemplate = new DataTemplate { VisualTree = panelFactory },
+                // Ctrl+C pitfall (§12): DataGridTemplateColumn copies nothing by default — this
+                // is what makes Ctrl+C still copy the plain value, exactly as the old
+                // DataGridTextColumn did.
+                ClipboardContentBinding = new Binding(valuePath) { Mode = BindingMode.OneWay }
+            };
+        }
+
+        /// <summary>§12 icon click: same target as the context-menu item below, just read off
+        /// the clicked Button's DataContext (the row) and Tag (the row index baked in above).
+        /// Does not stop routing — the cell may become the selected cell as a result, which is
+        /// acceptable per the plan.</summary>
+        private void OnFkIconClick(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (sender is FrameworkElement element && element.DataContext is PivotRowItem row && element.Tag is int rowIndex)
+                _viewModel.GoToSource(row, rowIndex);
+        }
+
+        /// <summary>§12 keyboard/context-menu alternative: enable "Go to source…" only when the
+        /// grid's current cell is a value cell (not the frozen "Column" cell) whose column+value
+        /// CanGo.</summary>
+        private void PivotGridContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _contextMenuRow = null;
+            _contextMenuRowIndex = -1;
+
+            var cell = PivotGrid.CurrentCell;
+            if (cell.Column != null && cell.Item is PivotRowItem row)
+            {
+                var columnIndex = PivotGrid.Columns.IndexOf(cell.Column);
+                var rowIndex = columnIndex - 1; // column 0 is the frozen "Column" column
+                var map = _viewModel.FkLinkMap;
+                if (rowIndex >= 0 && rowIndex < row.Values.Length && map != null &&
+                    map.CanGo(row.GridOrdinal, row.Values[rowIndex]))
                 {
-                    Header = "Row " + (rows[i] + 1).ToString(CultureInfo.InvariantCulture),
-                    // Mode=OneWay explicit: PivotRowItem.Values is a read-only array property
-                    // — a TwoWay default against a read-only property once blanked a whole
-                    // DataGrid elsewhere in this codebase (pitfalls list / ProfileView
-                    // Amendment 13, Bug 1). There is no editing here to justify TwoWay anyway.
-                    Binding = new Binding("Values[" + i.ToString(CultureInfo.InvariantCulture) + "]") { Mode = BindingMode.OneWay },
-                    Width = 110
-                };
-                PivotGrid.Columns.Add(column);
+                    _contextMenuRow = row;
+                    _contextMenuRowIndex = rowIndex;
+                }
             }
+
+            GoToSourceMenuItem.IsEnabled = _contextMenuRow != null;
+        }
+
+        private void GoToSourceMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (_contextMenuRow != null)
+                _viewModel.GoToSource(_contextMenuRow, _contextMenuRowIndex);
         }
     }
 }

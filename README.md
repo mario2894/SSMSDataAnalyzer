@@ -236,6 +236,7 @@ Turns selected rows sideways for easy comparison — column names appear down th
 - **Filter** box narrows columns by name
 - **Ctrl+C** copies selected cells (paste into Excel)
 - **Ctrl+A** selects all
+- **Foreign-key columns** show a link marker next to the column name and a small arrow inside each cell — click the arrow to open the linked record in a new query window (same as **Go to source…**; hover it to see where it goes). Right-click a cell → **Go to source…** does the same. If the query can't be traced back to its tables (for example a computed column), there's no arrow, and the line under the banner says why.
 
 **Limit:** By default, at most 100 rows can be pivoted. If more are selected, a highlighted banner shows "Showing 100 of N selected rows". Change the limit in **Tools → Options → SSMS Data Analyzer**, under **Pivot** (range 1–500).
 

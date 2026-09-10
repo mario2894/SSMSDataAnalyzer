@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using SsmsDataAnalyzer.Core.Metadata;
 using SsmsDataAnalyzer.Core.Model;
+using SsmsDataAnalyzer.Core.ResultShape;
 using SsmsDataAnalyzer.Core.Sql;
 using SsmsDataAnalyzer.Vsix.GoToSource;
 using SsmsDataAnalyzer.Vsix.ObjectExplorer;
@@ -13,15 +14,25 @@ using SsmsDataAnalyzer.Vsix.ObjectExplorer;
 namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 {
     /// <summary>
-    /// CONTRACT.md Amendment 16's five-gate precondition check plus the FK jump, pulled out of
+    /// CONTRACT.md Amendment 16/17's precondition check plus the FK jump, pulled out of
     /// <see cref="ResultsGridSourceCommand"/> so it can be exercised directly (against a real
-    /// connection and real query text) without any WinForms/GridControl involved — those are
-    /// the parts that genuinely cannot be driven headlessly (docs/resultsgrid-api.md's own
-    /// object graph is all WinForms controls), unlike this resolution logic, which is plain
-    /// data in, plain data out and is exactly the part most likely to jump to the wrong table
-    /// if it has a bug. Gates 1+2 (grid index 0 / single grid in tab) are the caller's
-    /// responsibility (<see cref="GridClickCapture"/>) since they are inherently about the
-    /// live UI, not the query text.
+    /// connection and real query text) without any WinForms/GridControl involved. This file
+    /// deliberately references no VS/SSMS UI type.
+    ///
+    /// docs/pivot-plan.md item 13 split it into stages so the pivot's FK link icons resolve
+    /// EVERY grid column from one describe call per batch, while single-cell Go to source runs
+    /// the very same stages for its one column:
+    /// <list type="number">
+    /// <item><see cref="DescribeAndMatchAsync"/> — split into GO batches, describe each,
+    /// match the grid's full shape (pure part: Core's <see cref="ResultShapeMatcher.Match"/>).</item>
+    /// <item><see cref="ResultShapeMatcher.ResolveColumn"/> — cross-batch agreement for one
+    /// ordinal (pure, Core).</item>
+    /// <item><see cref="CheckForeignKey"/> — the column's declared FK via Core's SchemaReader.</item>
+    /// <item><see cref="TryBuildJump"/> — cell display text → literal → SELECT.</item>
+    /// </list>
+    /// <see cref="ResolveAsync"/> (single cell) and <see cref="ResolveAllColumnsAsync"/> (every
+    /// column, no cell) are the two compositions. Gates 1+2 (which grid) are the caller's
+    /// responsibility since they are about the live UI, not the query text.
     /// </summary>
     internal static class ResultsGridGoToSourceResolver
     {
@@ -57,196 +68,62 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             public string TargetConnectionString;
         }
 
-        /// <summary>One candidate batch's describe outcome, kept only for building a specific
-        /// decline message — see <see cref="ResolveAsync"/>.</summary>
-        private sealed class BatchOutcome
+        /// <summary>One grid column's outcome in <see cref="ResolveAllColumnsAsync"/>. Holds
+        /// metadata only — never a cell value, never a connection string.</summary>
+        public sealed class ColumnLink
         {
-            public int BatchIndex; // 0-based, for messaging shown as 1-based
-            public List<DescribedColumn> Rows; // is_hidden-filtered, ordinal-ordered
-            public int MismatchOrdinal = -1; // first ordinal (1-based) where names differ, or -1 if none
-            public string MismatchDescribedName;
-            public string MismatchGridName;
+            /// <summary>1-based grid column.</summary>
+            public int GridOrdinal;
+            public string GridColumnName;
+            /// <summary>True only for a base column with exactly one single-column declared FK
+            /// that every shape-matching batch agrees on.</summary>
+            public bool IsLink;
+            /// <summary>When not a link: exactly the decline Go to source would show for a
+            /// click on this column (any non-NULL, formattable cell). Null when a link.</summary>
+            public string DeclineMessage;
+            /// <summary>The agreed described row (type/max_length/source database). Null when
+            /// the agreement step itself declined.</summary>
+            public DescribedColumn Described;
+            /// <summary>The source column's metadata carrying the FK target. Non-null when a link.</summary>
+            public ColumnMeta ForeignKeyColumn;
+            /// <summary>How many shape-matching batches agreed.</summary>
+            public int MatchCount;
+            /// <summary>"[schema].[table].[column]" of the referenced column when a link, else null.</summary>
+            public string TargetText;
         }
+
+        /// <summary>Result of <see cref="ResolveAllColumnsAsync"/>: either a whole-grid decline
+        /// (<see cref="DeclineMessage"/> set, <see cref="Columns"/> empty) or one
+        /// <see cref="ColumnLink"/> per grid column (index = ordinal - 1).</summary>
+        public sealed class ColumnLinkMap
+        {
+            public string DeclineMessage;
+            public IReadOnlyList<ColumnLink> Columns = new ColumnLink[0];
+        }
+
+        internal const string NoQueryTextMessage = "Go to source: no query text available.";
+        internal const string CouldNotBuildTargetConnectionMessage = "Go to source: could not build a connection for the source table's database.";
 
         public static async Task<Result> ResolveAsync(Request request, int describeTimeoutSeconds, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(request.EditorText))
-                return Decline("Go to source: no query text available.");
+            var shape = await DescribeAndMatchAsync(
+                request.EditorConnectionString, request.EditorText, request.NumberOfDataColumns,
+                request.GridColumnNames, request.GridColumnOrdinal, request.GridColumnName,
+                describeTimeoutSeconds, cancellationToken).ConfigureAwait(true);
 
-            // v0.7.4: SSMS executes whichever batch (GO-separated) the grid actually came
-            // from — often NOT the whole editor text (e.g. "USE db / GO / SELECT ..." is
-            // extremely common, and describing the whole buffer describes USE's own empty
-            // result, not the SELECT that produced this grid). See TSqlBatchSplitter's doc
-            // comment for why this is a real lexer, not a naive split on the substring "GO".
-            var batches = TSqlBatchSplitter.Split(request.EditorText)
-                .Select(b => b.Trim())
-                .Where(b => b.Length > 0)
-                .ToList();
+            if (!shape.IsMatch)
+                return Decline(shape.DeclineMessage);
 
-            if (batches.Count == 0)
-                return Decline("Go to source: no query text available.");
+            var column = ResultShapeMatcher.ResolveColumn(shape, request.GridColumnOrdinal, request.GridColumnName);
+            if (!column.Succeeded)
+                return Decline(column.DeclineMessage);
 
-            var fullMatches = new List<BatchOutcome>();
-            var nameMismatches = new List<BatchOutcome>();
-            // v0.7.5 field report: gate 4's decline named only the grid's own column count,
-            // never what was actually described -- the user had to guess which direction
-            // (more/fewer) and where. Kept for every count-mismatch batch so the status-bar
-            // message can say both counts and, when there's exactly one such batch, the
-            // first ordinal where the two column lists actually diverge.
-            var countMismatches = new List<(int BatchIndex, List<DescribedColumn> AllRows, List<DescribedColumn> FilteredRows)>();
-            int erroredCount = 0;
-
-            using (var describeConn = new SqlConnection(request.EditorConnectionString))
-            {
-                await describeConn.OpenAsync(cancellationToken).ConfigureAwait(true);
-
-                for (int b = 0; b < batches.Count; b++)
-                {
-                    // Gate 3: error rows (e.g. 11525 for temp tables in a multi-statement
-                    // batch) come back as ROWS, not exceptions. Checked on the UNFILTERED
-                    // result set — an error row's is_hidden comes back NULL (verified live),
-                    // so filtering by is_hidden = 0 first (as the raw SQL sketch would) can
-                    // silently hide the very row this gate exists to catch. See
-                    // DescribeFirstResultSetService's doc comment.
-                    var allRows = await DescribeFirstResultSetService.DescribeAsync(
-                        describeConn, batches[b], describeTimeoutSeconds, cancellationToken).ConfigureAwait(true);
-
-                    if (allRows.Any(r => r.ErrorNumber != null)) { erroredCount++; continue; }
-
-                    // NOW it's safe to drop the DM's browse-info rows (is_hidden = 1) —
-                    // ordinals 1..N of what's left align 1:1 with the grid's data columns
-                    // (docs section 6.3). A batch with no result set at all (e.g. a bare
-                    // "USE db") describes to zero rows here — that just falls through to the
-                    // count-mismatch case below, which is exactly the "never matches, for
-                    // free" outcome such a batch should have.
-                    var rows = allRows.Where(r => r.IsHidden == false).OrderBy(r => r.Ordinal).ToList();
-
-                    // Gate 4: shape must match exactly, or this candidate did not produce
-                    // this grid.
-                    if (rows.Count != request.NumberOfDataColumns) { countMismatches.Add((b, allRows, rows)); continue; }
-
-                    // Gate 5, now checked across EVERY column (not just the clicked one) —
-                    // a stronger identification than matching only the clicked column, per
-                    // the lead's explicit direction: "if exactly one [batch] matches, use it
-                    // — that's a stronger identification than we have today, not a weaker
-                    // one."
-                    var outcome = new BatchOutcome { BatchIndex = b, Rows = rows };
-                    for (int ord = 1; ord <= request.NumberOfDataColumns; ord++)
-                    {
-                        // Whether we actually HAVE a grid-side name to compare at this
-                        // ordinal: either the caller gave us the full grid column list, or
-                        // (older/degraded caller) this is the one clicked column we always
-                        // know. Ordinals we have no grid name for are simply not checked here
-                        // — treating "unknown" as "expected blank" would wrongly flag a
-                        // perfectly good match as a mismatch.
-                        bool haveGridNameHere = request.GridColumnNames != null || ord == request.GridColumnOrdinal;
-                        if (!haveGridNameHere) continue;
-
-                        var row = rows.FirstOrDefault(r => r.Ordinal == ord);
-                        string gridName = request.GridColumnNames != null && ord - 1 < request.GridColumnNames.Length
-                            ? request.GridColumnNames[ord - 1]
-                            : request.GridColumnName;
-
-                        if (row == null || !NamesMatch(row.Name, gridName))
-                        {
-                            if (outcome.MismatchOrdinal == -1)
-                            {
-                                outcome.MismatchOrdinal = ord;
-                                outcome.MismatchDescribedName = row?.Name;
-                                outcome.MismatchGridName = gridName;
-                            }
-                        }
-                    }
-
-                    if (outcome.MismatchOrdinal == -1) fullMatches.Add(outcome);
-                    else nameMismatches.Add(outcome);
-                }
-            }
-
-            DescribedColumn described;
-            if (fullMatches.Count == 0)
-            {
-                // v0.7.5 field report ("SELECT * FROM Finances.Accounting" declined with only
-                // "result shape does not match"): every mismatch this method found is logged
-                // in full (ordinal/name/is_hidden/error_number, the UNFILTERED rows) so the
-                // real cause is never further away than the ActivityLog — but per the lead's
-                // explicit ergonomics rule, the STATUS BAR message itself must carry as much
-                // of that as fits, not just "declined" with the detail hidden behind /log.
-                foreach (var cm in countMismatches) LogBatchDump("count mismatch", cm.BatchIndex, batches.Count, cm.AllRows);
-                foreach (var nmDump in nameMismatches) LogBatchDump("name mismatch", nmDump.BatchIndex, batches.Count, nmDump.Rows);
-
-                if (nameMismatches.Count == 1 && countMismatches.Count == 0)
-                {
-                    // Exactly one candidate had the right COLUMN COUNT but a name
-                    // disagreement — specific and actionable, same principle as the SqlInt32
-                    // fix: name what was actually seen instead of a generic "doesn't match."
-                    var nm = nameMismatches[0];
-                    string batchNote = batches.Count > 1 ? $" (batch {nm.BatchIndex + 1} of {batches.Count})" : "";
-                    return Decline($"Go to source: column {nm.MismatchOrdinal} is named '{Describe(nm.MismatchDescribedName)}' in the query but '{Describe(nm.MismatchGridName)}' on screen{batchNote} — declined rather than risk the wrong table.");
-                }
-
-                if (countMismatches.Count == 1 && nameMismatches.Count == 0)
-                {
-                    // Exactly one candidate: right batch, wrong COUNT. Always name both
-                    // numbers — which side is bigger already narrows the cause a lot, and
-                    // it's free (lead's explicit ask, after "result shape does not match"
-                    // alone sent the user hunting blind for a real bug: the DMF disagreeing
-                    // with the grid on SELECT *'s expansion).
-                    var cm = countMismatches[0];
-                    string batchNote = batches.Count > 1 ? $" (batch {cm.BatchIndex + 1} of {batches.Count})" : "";
-                    string divergenceNote = "";
-                    var divergence = FindFirstDivergence(cm.FilteredRows, request.GridColumnNames, request.NumberOfDataColumns);
-                    if (divergence.HasValue)
-                    {
-                        divergenceNote = $" First divergence at column {divergence.Value.Ordinal}: described '{Describe(divergence.Value.DescribedName)}', grid '{Describe(divergence.Value.GridName)}'.";
-                    }
-                    return Decline($"Go to source: the query describes {cm.FilteredRows.Count} column(s) but the grid shows {request.NumberOfDataColumns}{batchNote} — declined rather than risk the wrong table.{divergenceNote}");
-                }
-
-                var parts = new List<string>();
-                if (countMismatches.Count > 0) parts.Add($"{countMismatches.Count} had a different column count");
-                if (nameMismatches.Count > 0) parts.Add($"{nameMismatches.Count} had different column names");
-                if (erroredCount > 0) parts.Add($"{erroredCount} errored (e.g. a selection or a later batch's temp table)");
-                string detail = parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "";
-                return Decline($"Go to source: the query text has {batches.Count} batch(es) and none produced a result matching this grid's {request.NumberOfDataColumns} columns{detail} — declined rather than risk the wrong table.");
-            }
-
-            // v0.7.4 amendment (lead's ruling, supersedes the "exactly one matching batch"
-            // rule and Amendment 16's original gates 1+2 together): the question that
-            // actually matters is not "which single batch produced this grid" but "do ALL
-            // shape-matching candidates agree on where this column comes from." Two
-            // near-identical SELECTs (e.g. differing only in a WHERE value) describe to the
-            // same source table/column for the same clicked ordinal — requiring exactly one
-            // matching batch was refusing a case that was never actually ambiguous. If they
-            // DISAGREE on the source, that is the real wrong-table risk, caught directly here
-            // instead of by a same-tab-grid-count proxy.
-            var describedPerMatch = fullMatches
-                .Select(o => o.Rows.FirstOrDefault(r => r.Ordinal == request.GridColumnOrdinal))
-                .ToList();
-
-            if (describedPerMatch.Any(d => d == null))
-                return Decline("Go to source: could not match this column to the described query.");
-
-            described = describedPerMatch[0];
-            var distinctSources = describedPerMatch
-                .GroupBy(d => (d.SourceDatabase, Schema: d.SourceSchema ?? "dbo", d.SourceTable, d.SourceColumn),
-                    new SourceKeyComparer())
-                .ToList();
-
-            if (distinctSources.Count > 1)
-            {
-                string conflictList = string.Join(" vs. ", distinctSources.Select(g => DescribeSource(g.First())));
-                return Decline($"Go to source: '{request.GridColumnName}' does not resolve the same way across the query's matching batches — {conflictList} — declined rather than risk the wrong table.");
-            }
-
-            if (described.SourceTable == null)
-                return Decline($"Go to source: '{request.GridColumnName}' is a computed expression — it has no base table.");
-
-            var tableRef = new TableRef { Schema = described.SourceSchema ?? "dbo", Name = described.SourceTable };
+            var described = column.Described;
+            var tableRef = SourceTableRef(described);
 
             var targetConnectionString = request.BuildConnectionStringForDatabase(described.SourceDatabase);
             if (targetConnectionString == null)
-                return Decline("Go to source: could not build a connection for the source table's database.");
+                return Decline(CouldNotBuildTargetConnectionMessage);
 
             using (var targetConn = new SqlConnection(targetConnectionString))
             {
@@ -256,132 +133,247 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 // a second implementation.
                 var schema = await new SchemaReader().ReadAsync(targetConn, tableRef, new ProfileOptions(), cancellationToken).ConfigureAwait(true);
 
-                var columnMeta = schema.Columns.FirstOrDefault(c =>
-                    string.Equals(c.Name, described.SourceColumn, StringComparison.OrdinalIgnoreCase));
+                string fkDecline = CheckForeignKey(schema.Columns, described, tableRef, out var columnMeta);
+                if (fkDecline != null)
+                    return Decline(fkDecline);
 
-                if (columnMeta == null)
-                    return Decline($"Go to source: could not find column '{described.SourceColumn}' on {tableRef.QualifiedName}.");
-
-                // Never gate on IsForeignKey alone (CONTRACT.md Amendment 15): a composite or
-                // multi-FK column both set it true but leave ReferencedTable/-Column null.
-                if (columnMeta.ReferencedTable == null)
-                    return Decline($"Go to source: '{columnMeta.Name}' on {tableRef.QualifiedName} is not a (single-resolvable) foreign key.");
-
-                if (columnMeta.ReferencedColumn == null)
-                    return Decline($"Go to source: '{columnMeta.Name}' is part of a composite foreign key — can't resolve a single-value filter.");
-
-                // v0.8.0 ("build against the older API" decision): request.CellValue is now
-                // the grid's DISPLAY TEXT (IGridStorage.GetCellDataAsString), not the typed
-                // SqlTypes value IGridResultSet.GetCellData used to give us — see
-                // docs/newer-grid-api.md for the previous typed-value implementation and how
-                // to restore it on SSMS 22.9+. TryFormatDisplayText both parses the text back
-                // to a literal AND is where a NULL-vs-literal-"NULL" cell gets declined (the
-                // old IsEffectivelyNull check no longer applies — CellValue is always a
-                // string now, never a SqlTypes struct or C# null).
-                string cellDisplayText = request.CellValue as string;
-                if (!SqlLiteralFormatter.TryFormatDisplayText(cellDisplayText, described.SystemTypeName, described.MaxLength, out var literal, out var declineReason))
-                    return Decline($"Go to source: [{request.GridColumnName}] {declineReason}.");
-
-                var sql = $"SELECT * FROM {columnMeta.ReferencedQualifiedName} WHERE {SqlIdentifier.Bracket(columnMeta.ReferencedColumn)} = {literal};";
-
-                // Lead's explicit ask: make the multi-batch agreement visible, not magic.
-                string matchNote = fullMatches.Count > 1
-                    ? $" (resolved via {fullMatches.Count} matching batches, all agreeing on this source)"
-                    : "";
+                // v0.8.0: CellValue is the grid's DISPLAY TEXT (IGridStorage.GetCellDataAsString)
+                // — see docs/newer-grid-api.md. TryBuildJump both parses it back to a literal
+                // AND is where a NULL-vs-literal-"NULL" cell gets declined.
+                if (!TryBuildJump(columnMeta, described, request.GridColumnName, request.CellValue as string, column.MatchCount, out var sql, out var statusMessage))
+                    return Decline(statusMessage);
 
                 return new Result
                 {
                     Success = true,
-                    StatusMessage = $"Resolved to {columnMeta.ReferencedQualifiedName}.{matchNote}",
+                    StatusMessage = statusMessage,
                     GeneratedSql = sql,
                     TargetConnectionString = targetConnectionString
                 };
             }
         }
 
-        private static Result Decline(string reason) => new Result { Success = false, StatusMessage = reason };
-
-        /// <summary>Both NULL/"(No column name)" count as a match (docs section 6.4).</summary>
-        internal static bool NamesMatch(string describedName, string gridColumnName)
+        /// <summary>
+        /// Stage 1: describe every GO-separated batch of <paramref name="editorText"/> (one
+        /// describe call per batch, one connection) and match each against the grid's full
+        /// shape. Logs the full describe dumps when nothing matched (same as before the split).
+        /// </summary>
+        internal static async Task<ShapeMatch> DescribeAndMatchAsync(
+            string editorConnectionString, string editorText, int numberOfDataColumns,
+            IReadOnlyList<string> gridColumnNames, int clickedOrdinal, string clickedColumnName,
+            int describeTimeoutSeconds, CancellationToken cancellationToken)
         {
-            bool describedEmpty = string.IsNullOrEmpty(describedName) || describedName == "(No column name)";
-            bool gridEmpty = string.IsNullOrEmpty(gridColumnName) || gridColumnName == "(No column name)";
-            if (describedEmpty && gridEmpty) return true;
-            return string.Equals(describedName, gridColumnName, StringComparison.Ordinal);
+            if (string.IsNullOrWhiteSpace(editorText))
+                return ShapeMatch.Declined(NoQueryTextMessage);
+
+            // v0.7.4: SSMS executes whichever batch (GO-separated) the grid actually came
+            // from — often NOT the whole editor text ("USE db / GO / SELECT ..."). See
+            // TSqlBatchSplitter's doc comment for why this is a real lexer.
+            var batches = TSqlBatchSplitter.Split(editorText)
+                .Select(b => b.Trim())
+                .Where(b => b.Length > 0)
+                .ToList();
+
+            if (batches.Count == 0)
+                return ShapeMatch.Declined(NoQueryTextMessage);
+
+            var described = new List<IReadOnlyList<DescribedColumn>>(batches.Count);
+            using (var describeConn = new SqlConnection(editorConnectionString))
+            {
+                await describeConn.OpenAsync(cancellationToken).ConfigureAwait(true);
+
+                for (int b = 0; b < batches.Count; b++)
+                {
+                    // UNFILTERED rows — gate 3 (error rows) must see is_hidden = NULL rows.
+                    described.Add(await DescribeFirstResultSetService.DescribeAsync(
+                        describeConn, batches[b], describeTimeoutSeconds, cancellationToken).ConfigureAwait(true));
+                }
+            }
+
+            var match = ResultShapeMatcher.Match(described, numberOfDataColumns, gridColumnNames, clickedOrdinal, clickedColumnName);
+
+            // v0.7.5: the full dump stays one ActivityLog away even when the status bar
+            // message can't carry all of it. Column names/metadata only, never cell values.
+            foreach (var dump in match.DiagnosticDumps)
+                OeDiagnostics.Warn(dump);
+
+            return match;
         }
 
-        /// <summary>For decline messages only — renders a null/blank column name the same
-        /// human-readable way SSMS itself shows an unnamed column.</summary>
-        private static string Describe(string name) => string.IsNullOrEmpty(name) ? "(No column name)" : name;
-
         /// <summary>
-        /// v0.7.5: when a single batch's described column COUNT doesn't match the grid, the
-        /// two counts alone tell the user which direction (more/fewer) but not WHERE the two
-        /// lists actually part ways — this walks both lists together, ordinal by ordinal, and
-        /// returns the first ordinal where the described name and the grid's own name stop
-        /// agreeing (same <see cref="NamesMatch"/> used everywhere else, so "both blank"
-        /// still counts as agreement). Returns null if the caller has no grid column names to
-        /// compare against (the pre-v0.7.4 degraded-caller case) or if every ordinal up to the
-        /// shorter list's end actually agrees (the two lists only differ by trailing
-        /// columns — still worth saying so in the message, just nothing to point at).
+        /// docs/pivot-plan.md item 13: resolve EVERY grid column at once — one describe call
+        /// per batch, then one SchemaReader read per distinct source table (grouped ordinally,
+        /// so two tables differing only by case in a case-sensitive database are never
+        /// conflated). Per column, the outcome is exactly what single-cell Go to source decides
+        /// for that column before it looks at the cell value.
         /// </summary>
-        private static (int Ordinal, string DescribedName, string GridName)? FindFirstDivergence(
-            List<DescribedColumn> describedRows, string[] gridColumnNames, int gridColumnCount)
+        /// <param name="gridColumnNames">Every grid column's header text; its length is the
+        /// grid's data-column count. Must not be null.</param>
+        /// <param name="buildConnectionStringForDatabase">Same contract as
+        /// <see cref="Request.BuildConnectionStringForDatabase"/>. Connection strings are used
+        /// immediately and never stored in the result.</param>
+        /// <exception cref="OperationCanceledException">When <paramref name="cancellationToken"/> fires.</exception>
+        internal static async Task<ColumnLinkMap> ResolveAllColumnsAsync(
+            string editorConnectionString, string editorText, IReadOnlyList<string> gridColumnNames,
+            Func<string, string> buildConnectionStringForDatabase,
+            int describeTimeoutSeconds, CancellationToken cancellationToken)
         {
-            if (gridColumnNames == null) return null;
+            if (gridColumnNames == null) throw new ArgumentNullException(nameof(gridColumnNames));
+            if (buildConnectionStringForDatabase == null) throw new ArgumentNullException(nameof(buildConnectionStringForDatabase));
 
-            int maxOrdinal = Math.Max(describedRows.Count == 0 ? 0 : describedRows.Max(r => r.Ordinal), gridColumnCount);
-            for (int ord = 1; ord <= maxOrdinal; ord++)
+            int columnCount = gridColumnNames.Count;
+            var shape = await DescribeAndMatchAsync(
+                editorConnectionString, editorText, columnCount, gridColumnNames, 0, null,
+                describeTimeoutSeconds, cancellationToken).ConfigureAwait(true);
+
+            if (!shape.IsMatch)
+                return new ColumnLinkMap { DeclineMessage = shape.DeclineMessage };
+
+            var columns = new ColumnLink[columnCount];
+            for (int i = 0; i < columnCount; i++)
             {
-                string describedName = describedRows.FirstOrDefault(r => r.Ordinal == ord)?.Name;
-                string gridName = ord - 1 < gridColumnNames.Length ? gridColumnNames[ord - 1] : null;
-                if (!NamesMatch(describedName, gridName))
-                    return (ord, describedName, gridName);
+                int ordinal = i + 1;
+                var link = new ColumnLink { GridOrdinal = ordinal, GridColumnName = gridColumnNames[i] };
+                var resolution = ResultShapeMatcher.ResolveColumn(shape, ordinal, link.GridColumnName);
+                if (resolution.Succeeded)
+                {
+                    link.Described = resolution.Described;
+                    link.MatchCount = resolution.MatchCount;
+                }
+                else
+                {
+                    link.DeclineMessage = resolution.DeclineMessage;
+                }
+                columns[i] = link;
             }
+
+            // Group the agreed columns by source database, then by table — ORDINAL keys.
+            var byDatabase = columns
+                .Where(c => c.Described != null)
+                .GroupBy(c => c.Described.SourceDatabase ?? string.Empty, StringComparer.Ordinal);
+
+            foreach (var dbGroup in byDatabase)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Same argument Go to source passes (the DM's source_database, possibly null).
+                string sourceDatabase = dbGroup.First().Described.SourceDatabase;
+                string targetConnectionString = buildConnectionStringForDatabase(sourceDatabase);
+                if (targetConnectionString == null)
+                {
+                    foreach (var c in dbGroup) c.DeclineMessage = CouldNotBuildTargetConnectionMessage;
+                    continue;
+                }
+
+                try
+                {
+                    using (var targetConn = new SqlConnection(targetConnectionString))
+                    {
+                        await targetConn.OpenAsync(cancellationToken).ConfigureAwait(true);
+
+                        var byTable = dbGroup.GroupBy(
+                            c => SourceTableRef(c.Described).QualifiedName, StringComparer.Ordinal);
+
+                        foreach (var tableGroup in byTable)
+                        {
+                            var tableRef = SourceTableRef(tableGroup.First().Described);
+                            try
+                            {
+                                var schema = await new SchemaReader().ReadAsync(targetConn, tableRef, new ProfileOptions(), cancellationToken).ConfigureAwait(true);
+                                foreach (var c in tableGroup)
+                                {
+                                    string fkDecline = CheckForeignKey(schema.Columns, c.Described, tableRef, out var columnMeta);
+                                    if (fkDecline != null)
+                                    {
+                                        c.DeclineMessage = fkDecline;
+                                        continue;
+                                    }
+                                    c.IsLink = true;
+                                    c.ForeignKeyColumn = columnMeta;
+                                    c.TargetText = columnMeta.ReferencedQualifiedName + "." + SqlIdentifier.Bracket(columnMeta.ReferencedColumn);
+                                }
+                            }
+                            catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !(ex is OperationCanceledException))
+                            {
+                                // One unreadable table (e.g. no VIEW DEFINITION) must not take
+                                // down the links of every other column. Go to source would have
+                                // shown "Go to source: " + ex.Message for a click here.
+                                OeDiagnostics.Error("Pivot FK links: reading " + tableRef.QualifiedName + " failed", ex);
+                                foreach (var c in tableGroup) c.DeclineMessage = "Go to source: " + ex.Message;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !(ex is OperationCanceledException))
+                {
+                    OeDiagnostics.Error("Pivot FK links: connecting to a source database failed", ex);
+                    foreach (var c in dbGroup.Where(c => !c.IsLink && c.DeclineMessage == null))
+                        c.DeclineMessage = "Go to source: " + ex.Message;
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ColumnLinkMap { Columns = columns };
+        }
+
+        /// <summary>Stage 3 check: the described base column must exist on its table and carry
+        /// exactly one single-column declared FK. Returns the decline message, or null with
+        /// <paramref name="columnMeta"/> set.</summary>
+        internal static string CheckForeignKey(IEnumerable<ColumnMeta> tableColumns, DescribedColumn described, TableRef tableRef, out ColumnMeta columnMeta)
+        {
+            columnMeta = (tableColumns ?? Enumerable.Empty<ColumnMeta>()).FirstOrDefault(c =>
+                string.Equals(c.Name, described.SourceColumn, StringComparison.OrdinalIgnoreCase));
+
+            if (columnMeta == null)
+                return $"Go to source: could not find column '{described.SourceColumn}' on {tableRef.QualifiedName}.";
+
+            // Never gate on IsForeignKey alone (CONTRACT.md Amendment 15): a composite or
+            // multi-FK column both set it true but leave ReferencedTable/-Column null.
+            if (columnMeta.ReferencedTable == null)
+                return $"Go to source: '{columnMeta.Name}' on {tableRef.QualifiedName} is not a (single-resolvable) foreign key.";
+
+            if (columnMeta.ReferencedColumn == null)
+                return $"Go to source: '{columnMeta.Name}' is part of a composite foreign key — can't resolve a single-value filter.";
+
             return null;
         }
 
-        /// <summary>
-        /// v0.7.5: the fuller diagnostic the lead asked to keep alongside the short status-bar
-        /// message — every row exactly as sys.dm_exec_describe_first_result_set returned it
-        /// (UNFILTERED: is_hidden and error_number included, not dropped), so a divergence
-        /// that the short message can't fully explain is still fully visible without needing
-        /// SSMS relaunched with /log (that requirement is exactly what the status-bar message
-        /// itself exists to avoid — this is the fallback for when even that isn't enough).
-        /// </summary>
-        private static void LogBatchDump(string reason, int batchIndex, int totalBatches, List<DescribedColumn> allRows)
+        /// <summary>True when <paramref name="cellDisplayText"/> can be turned into a literal for
+        /// this column's described type (non-NULL, not float/binary/MAX, parses). CPU only.</summary>
+        internal static bool CanFormatCell(DescribedColumn described, string cellDisplayText) =>
+            described != null &&
+            SqlLiteralFormatter.TryFormatDisplayText(cellDisplayText, described.SystemTypeName, described.MaxLength, out _, out _);
+
+        /// <summary>Stage 4: literal + SELECT + the success status text. On false,
+        /// <paramref name="statusMessage"/> is the decline (which can quote the display text —
+        /// SqlLiteralFormatter's own wording — so callers must not log it).</summary>
+        internal static bool TryBuildJump(ColumnMeta columnMeta, DescribedColumn described, string gridColumnName, string cellDisplayText, int matchCount, out string sql, out string statusMessage)
         {
-            var lines = allRows.Select(r =>
-                $"  ordinal={r.Ordinal} name='{r.Name ?? "<null>"}' is_hidden={(r.IsHidden.HasValue ? r.IsHidden.Value.ToString() : "NULL")} error_number={(r.ErrorNumber.HasValue ? r.ErrorNumber.Value.ToString() : "NULL")}");
-            OeDiagnostics.Warn($"Go to source ({reason}) — full describe dump for batch {batchIndex + 1} of {totalBatches}:\n{string.Join("\n", lines)}");
+            sql = null;
+            if (!SqlLiteralFormatter.TryFormatDisplayText(cellDisplayText, described.SystemTypeName, described.MaxLength, out var literal, out var declineReason))
+            {
+                statusMessage = $"Go to source: [{gridColumnName}] {declineReason}.";
+                return false;
+            }
+
+            sql = $"SELECT * FROM {columnMeta.ReferencedQualifiedName} WHERE {SqlIdentifier.Bracket(columnMeta.ReferencedColumn)} = {literal};";
+
+            // Lead's explicit ask: make the multi-batch agreement visible, not magic.
+            string matchNote = matchCount > 1
+                ? $" (resolved via {matchCount} matching batches, all agreeing on this source)"
+                : "";
+
+            statusMessage = $"Resolved to {columnMeta.ReferencedQualifiedName}.{matchNote}";
+            return true;
         }
 
-        /// <summary>For decline/conflict messages only — human-readable "where does this
-        /// column actually come from," used to name a disagreement between batches
-        /// concretely rather than just refusing.</summary>
-        private static string DescribeSource(DescribedColumn c) =>
-            c.SourceTable == null
-                ? "a computed expression with no base table"
-                : $"{(c.SourceDatabase != null ? c.SourceDatabase + "." : "")}{c.SourceSchema ?? "dbo"}.{c.SourceTable}.{c.SourceColumn}";
+        private static TableRef SourceTableRef(DescribedColumn described) =>
+            new TableRef { Schema = described.SourceSchema ?? "dbo", Name = described.SourceTable };
 
-        /// <summary>Identifies "the same underlying column" across independently-described
-        /// batches (database/schema/table/column, case-insensitive — SQL Server identifiers
-        /// describing the literal same object off the same server should never legitimately
-        /// differ only in case). Deliberately NOT the same comparison as
-        /// <see cref="NamesMatch"/>, which is ordinal because it's checking a DISPLAYED label
-        /// against what SSMS itself shows, not two descriptions of one real object.</summary>
-        private sealed class SourceKeyComparer : IEqualityComparer<(string SourceDatabase, string Schema, string SourceTable, string SourceColumn)>
-        {
-            public bool Equals((string SourceDatabase, string Schema, string SourceTable, string SourceColumn) a,
-                                (string SourceDatabase, string Schema, string SourceTable, string SourceColumn) b) =>
-                string.Equals(a.SourceDatabase, b.SourceDatabase, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(a.Schema, b.Schema, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(a.SourceTable, b.SourceTable, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(a.SourceColumn, b.SourceColumn, StringComparison.OrdinalIgnoreCase);
+        private static Result Decline(string reason) => new Result { Success = false, StatusMessage = reason };
 
-            public int GetHashCode((string SourceDatabase, string Schema, string SourceTable, string SourceColumn) k) =>
-                StringComparer.OrdinalIgnoreCase.GetHashCode(k.SourceTable ?? "") ^
-                StringComparer.OrdinalIgnoreCase.GetHashCode(k.SourceColumn ?? "");
-        }
+        /// <summary>Both NULL/"(No column name)" count as a match (docs section 6.4).</summary>
+        internal static bool NamesMatch(string describedName, string gridColumnName) =>
+            ResultShapeMatcher.NamesMatch(describedName, gridColumnName);
     }
 }
