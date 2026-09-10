@@ -1,5 +1,6 @@
 using System;
 using SsmsDataAnalyzer.Core.Model;
+using SsmsDataAnalyzer.Core.Pivot;
 
 namespace SsmsDataAnalyzer.Vsix.Options
 {
@@ -30,5 +31,18 @@ namespace SsmsDataAnalyzer.Vsix.Options
 
         public static bool GetAutoExecuteGoToSourceQuery() =>
             AutoExecuteGoToSourceQueryProvider != null ? AutoExecuteGoToSourceQueryProvider() : true;
+
+        /// <summary>docs/pivot-plan.md section 10 — "Pivot row limit" option, same
+        /// read-fresh-every-time shape as the rest of this class. PivotBuilder.Build clamps
+        /// independently too, so this is defense in depth, not the only clamp.</summary>
+        public static Func<int> PivotRowLimitProvider { get; set; }
+
+        public static int GetPivotRowLimit()
+        {
+            var value = PivotRowLimitProvider != null ? PivotRowLimitProvider() : PivotBuilder.DefaultRowLimit;
+            if (value < PivotBuilder.MinRowLimit) return PivotBuilder.MinRowLimit;
+            if (value > PivotBuilder.MaxRowLimit) return PivotBuilder.MaxRowLimit;
+            return value;
+        }
     }
 }

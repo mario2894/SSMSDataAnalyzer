@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.10.0**
+**`SsmsDataAnalyzer.vsix` — version 0.11.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -27,9 +27,12 @@ why.
 | Search inside query results | Right-click the results grid → **Find…** |
 | Jump to a linked record | Right-click a cell or column → **Go to source…** |
 | Paste a list as an IN clause | In a query window, right-click → **Paste as SQL IN (...)** |
+| Compare rows side by side | Select rows in the results grid → right-click → **Pivot selected rows…** |
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.11.0** — New: **Pivot selected rows…** on the results grid's right-click menu (also under Tools). Turns the selected rows sideways — column names down the left, one column per row — so wide rows can be read and compared. Columns whose values differ between the rows are highlighted; toggles show only differing columns or hide all-NULL ones, and a filter box narrows columns by name. Ctrl+C copies selected cells for Excel. Shows at most 100 rows (change it in Options → Pivot); anything beyond that is named in the banner. The values are a snapshot taken when you open it.
 
 **0.10.0** — The **Type** column in Analyze Data now shows the declared size: `nvarchar(50)`, `decimal(18,2)`, `datetime2(7)`, `nvarchar(max)` — instead of just the bare type name.
 

@@ -216,6 +216,13 @@
     <Compile Update="ResultsGrid\GridFindView.xaml.cs">
       <DependentUpon>GridFindView.xaml</DependentUpon>
     </Compile>
+    <Page Update="Pivot\PivotView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Update="Pivot\PivotView.xaml.cs">
+      <DependentUpon>PivotView.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

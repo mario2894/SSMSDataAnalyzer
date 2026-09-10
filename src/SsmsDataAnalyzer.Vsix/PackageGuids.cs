@@ -27,6 +27,11 @@ namespace SsmsDataAnalyzer.Vsix
         /// GridFindToolWindow's doc comment.</summary>
         public const string GridFindToolWindowPersistenceGuidString = "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
         public static readonly Guid GridFindToolWindowPersistenceGuid = new Guid(GridFindToolWindowPersistenceGuidString);
+
+        /// <summary>PivotToolWindow's persistence GUID — docs/pivot-plan.md section 10's
+        /// "Allocated IDs" table (lead-assigned, do not change).</summary>
+        public const string PivotToolWindowPersistenceGuidString = "1de89e5c-9c40-455e-9ad7-3441a767b7f9";
+        public static readonly Guid PivotToolWindowPersistenceGuid = new Guid(PivotToolWindowPersistenceGuidString);
     }
 
     /// <summary>Numeric command/menu/group IDs used inside VSCommandTable.vsct.</summary>
@@ -46,6 +51,11 @@ namespace SsmsDataAnalyzer.Vsix
         /// <summary>User request: "Find... on right click in result grid of SSMS." Same
         /// results-grid menu group as GoToSourceForValueCommandId.</summary>
         public const int GridFindCommandId = 0x0201;
+
+        /// <summary>docs/pivot-plan.md "Pivot selected rows..." — same results-grid menu
+        /// group as GoToSourceForValueCommandId/GridFindCommandId, plus a Tools-menu
+        /// CommandPlacement (VSCommandTable.vsct). Lead-allocated ID, plan section 10.</summary>
+        public const int PivotRowsCommandId = 0x0202;
 
         /// <summary>User request: "Paste as SQL IN (...)" in the query editor. This group is
         /// parented (in VSCommandTable.vsct only) to the STANDARD VS code-window context menu,

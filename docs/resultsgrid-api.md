@@ -788,3 +788,193 @@ $r = $cmd.ExecuteReader([System.Data.CommandBehavior]::Default)   # what SSMS us
 $r.GetSchemaTable() | ForEach-Object { $_["BaseTableName"], $_["BaseColumnName"] }
 $r = $cmd.ExecuteReader([System.Data.CommandBehavior]::KeyInfo)   # what SSMS does NOT use
 ```
+
+---
+
+## Pivot selection (spike S1)
+
+Spike for `docs/pivot-plan.md` §7/§11 (agent S1). Target confirmed the same as §1 above:
+**SSMS 22.9.12105.275**, `Microsoft.SqlServer.GridControl.dll` (22.200.0.0, IDE root) and
+`Extensions\Application\SQLEditors.dll`. All findings are from `spikes/OeProbe` (pure IL/metadata
+read, nothing executed) after rebuilding it in Release. No SSMS UI was driven for this spike; the
+two "manual check" recipes at the end are for the user to confirm live.
+
+### Q1 — Does right-click change `SelectedCells` before the menu opens?
+
+> **Answer: outside the current selection → YES, changes it. Inside the current selection → NO,
+> preserved. Confidence: HIGH** (both branches read directly from decoded IL, not inferred).
+
+Evidence chain, all in `Microsoft.SqlServer.GridControl.dll`:
+
+1. `GridControl::OnMouseDown` dispatches on `CaptureTracker.CaptureHitTest` (the hit-test result
+   computed synchronously at mouse-down). For a normal data cell (`HitTestResult.TextCell`) this
+   calls `GridControl::HandleStdCellLBtnDown(Control.ModifierKeys)` — note the argument is the
+   **keyboard modifier state**, not the mouse button. Nothing here special-cases
+   `MouseButtons.Right`; the same call happens for left and right buttons alike (SSMS's
+   `GridResultsGrid.OnMouseDown` override, quoted in §4.3 above, only focuses the control on
+   right-click and then calls `base.OnMouseDown(e)` — it adds no right-click branch of its own).
+2. `HandleStdCellLBtnDown` calls `GridControl::ProcessSelAndEditingForLeftClickOnCell(modifierKeys, …)`.
+3. `ProcessSelAndEditingForLeftClickOnCell` IL, decoded: if `Keys.Control` or `Keys.Shift` is
+   held, it takes the multi-select/extend branch (irrelevant to a plain right-click, which carries
+   no keyboard modifier). Otherwise — **the path a modifier-less right-click always takes** — it
+   does:
+   ```
+   if (m_selMgr.IsCellSelected(row, col))
+       // clicked cell is already part of the current selection: skip Clear() entirely
+   else
+       m_selMgr.Clear();   // drop the old selection
+       // (StartNewBlock(row, col) follows back in HandleStdCellLBtnDown)
+   ```
+   `SelectionManager.IsCellSelected(row, col)` is the exact gate: clicking a cell **inside**
+   the existing `SelectedCells` skips `Clear()` — the multi-selection survives. Clicking
+   **outside** it takes the `else` branch — `Clear()` runs and the selection collapses to the
+   single clicked cell before `HandleStdCellLBtnDown` returns.
+4. All of this happens synchronously inside `OnMouseDown`, i.e. on the **mouse-down** edge, and
+   `WM_CONTEXTMENU` (which is what triggers `ShowContextMenu`, per §2 above) fires later on
+   **mouse-up**. So by the time the context menu opens, `SelectedCells` already reflects the
+   post-click state — there is no window where the menu sees the pre-click selection.
+
+Practical consequence for `GridClickCapture` (§7 item 1 of the plan): reading `SelectedCells` at
+menu-build time (`BeforeQueryStatus`) already gives the right, up-to-date answer — there is no
+need to snapshot the selection earlier in a mouse-down hook. What *does* still need a mouse-down
+hook (or `HitTest`, per §4.3) is knowing **which single cell was right-clicked**, for the "only
+one cell selected → pivot that record" case in plan §2, since a right-click outside the selection
+makes the clicked cell both the new selection and the answer to "which cell", but a right-click
+*inside* a surviving multi-selection needs the click location recovered separately (it is not
+"the" selected cell — the whole block is).
+
+### Q2 — Whole-row selection and Ctrl+A in `BlockOfCells`
+
+> **Answer: both are ordinary, fully-populated blocks — no sentinel, no special column value.
+> Confidence: HIGH** for the field values (read directly from the IL that constructs them);
+> **MEDIUM** for "this is truly what fires on a live gutter click" (not exercised live in this
+> spike — see the manual check below).
+
+`BlockOfCells` fields: `X`/`Right` are `int` (grid column), `Y`/`Bottom` are `long` (grid row).
+An *empty* block (default ctor, or `Width`/`Height` set to `0`) uses **`X = Y = Right = Bottom =
+-1`** as the sentinel (`BlockOfCells.IsEmpty` checks exactly this). Neither whole-row selection
+nor Ctrl+A produces an empty block — both build a real, fully-bounded rectangle:
+
+**Whole-row selection** (clicking the row-number gutter) is *not* handled by `GridControl`'s own
+built-in "row select" path (`SelectionManager.SelectionType == SingleRow`) — SSMS never sets that
+mode. Proof: `QueryExecution.ResultSetAndGridContainer::Initialize` does
+`grid.SelectionType = 4` (`GridSelectionType.CellBlocks`) unconditionally, and
+`GridControl::AdjustColumnIndexesInSelectedCells` (invoked by the public `SelectedCells` getter)
+only short-circuits the row-index-only path when `SelectionType == SingleRow (0)` — so SSMS's
+grid is always in `CellBlocks` mode and that built-in path is dead code here.
+
+Instead, `SQLEditors.dll`'s `Editors.GridResultsTabPage::SelectBlockOfCellsAsRowSelection`
+(reached from the row-gutter button click via `GridResultsGrid`'s custom
+`AdjustSelectionForButtonClick` event) builds the block explicitly, IL decoded verbatim:
+
+```
+var b = new BlockOfCells(firstClickedRow, /*col*/ 1);   // ctor(long row, int col)
+b.Width  = rs.TotalNumberOfColumns - 1;                  // = NumberOfDataColumns
+b.Height = (lastRow - firstRow) + 1;
+grid.SetSelectedCellsAndCurrentCell(new[] { b }, lastRow, 1);
+```
+`BlockOfCells.Width`/`Height` setters (also decoded) compute `Right = X + Width - 1` and
+`Bottom = Y + Height - 1`. Net result for a row-gutter click/drag over rows `r1..r2`:
+
+| Field | Value | Meaning |
+|---|---|---|
+| `X` | `1` | first **data** column (grid column 1 — the gutter, column 0, is deliberately excluded) |
+| `Right` | `NumberOfDataColumns` | last data column — i.e. **all data columns**, same convention as `GetCellDataAsString` (§4.2) |
+| `Y` | `r1` | first selected row (0-based grid row) |
+| `Bottom` | `r2` | last selected row (inclusive) |
+
+**Ctrl+A** (`GridResultsTabPage::OnSelectAll`, the handler for `cmdidWBSelectAll` = 100, §2 above)
+calls `GridResultsTabPage::SelectAllCellInGrid`, which is even simpler — **one `BlockOfCells` for
+the whole grid, built in O(1)**, never touching individual rows:
+
+```
+var b = new BlockOfCells(0, 1);
+b.Width  = rs.TotalNumberOfColumns - 1;   // = NumberOfDataColumns
+b.Height = rs.NumRows;                     // NumRows is an O(1) property read, not a scan
+grid.SelectedCells = new BlockOfCellsCollection { b };   // just this one block
+```
+So Ctrl+A on a 1,000,000-row result produces exactly one block: `X=1, Right=NumberOfDataColumns,
+Y=0, Bottom=NumRows-1`. This directly satisfies plan §7 item 2's "must stay cheap … never by
+visiting each row" concern for the *selection itself* — reading it back is likewise O(ranges) if
+`PivotSelection.CountDistinctRows`/`TakeDistinctRows` (frozen interface, plan §10) treat each
+`BlockOfCells` as one `RowRange(Y, Bottom)`, exactly as intended.
+
+**Column-header click** (select a whole column) is the mirror image, in
+`GridResultsTabPage::SelectWholeRowOrColumn` / `SelectBlockOfCellsAsColumnSelection`: `Y=0`,
+`Height=NumRows` (or `Bottom = NumRows-1`), `X=Right=` the clicked column only. Not relevant to
+the pivot feature (which pivots by row) but included here since it was found in the same methods
+and confirms the pattern is symmetric, not row-specific magic.
+
+### Q3 — `BlockOfCells` members and index space
+
+> **Confidence: HIGH** — all read directly from metadata (`OeProbe members --all`), no inference.
+
+`Microsoft.SqlServer.Management.UI.Grid.BlockOfCells` (`Microsoft.SqlServer.GridControl.dll`,
+public sealed class):
+
+```csharp
+public sealed class BlockOfCells
+{
+    public bool IsEmpty { get; }              // true iff X==Y==Right==Bottom==-1
+    public int  X       { get; set; }         // first grid column (int)
+    public long Y       { get; set; }         // first grid row (long — supports >2^31 rows)
+    public int  Right   { get; }              // last grid column, inclusive
+    public long Bottom  { get; }              // last grid row, inclusive
+    public int  Width    { get; set; }        // Right = X + Width - 1 (Width==0 -> X=Right=-1)
+    public long Height   { get; set; }        // Bottom = Y + Height - 1 (Height==0 -> Y=Bottom=-1)
+    public int  OriginalX { get; }             // anchor column of a drag (for extending a block)
+    public long OriginalY { get; }             // anchor row of a drag
+    public BlockOfCells(long row, int col);   // only public ctor: single-cell block at (row, col)
+    public bool Contains(long row, int col);
+}
+```
+`X`/`Right` use the same **grid column index** convention `docs/resultsgrid-api.md` §4.2 already
+established for `IGridResultSet.GetCellDataAsString(row, col)`: **grid column 0 is the
+row-number gutter; data columns are `1..NumberOfDataColumns`.** `Y`/`Bottom` are **0-based grid
+row numbers** — the same `long row` that `GetCellDataAsString(row, col)` takes directly, no
+adjustment needed. This lines up exactly with the frozen interface in plan §10 ("Grid rows are
+0-based; grid columns use the existing 1-based grid index, 0 = gutter") — no translation beyond
+`RowRange(block.Y, block.Bottom)` and iterating `block.X..block.Right` is needed when converting
+`BlockOfCells` → `RowRange`.
+
+`BlockOfCellsCollection` (`System.Collections.CollectionBase`, `IDisposable`): a plain indexed,
+enumerable collection of `BlockOfCells` (`Item[int]`, `Add`, `AddRange`, `Contains`, `IndexOf`,
+`Insert`, `Remove`, `CopyTo` — standard `CollectionBase` shape, foreach-able like any
+`IEnumerable`). No de-duplication or overlap-merging happens anywhere in this collection or in
+`SelectionManager` — overlapping/duplicate blocks (e.g. from Ctrl+click combining ranges) can
+occur and must be handled by the consumer, exactly as plan §10's
+`PivotSelection.CountDistinctRows`/`TakeDistinctRows` already assume ("overlaps counted once").
+
+**Reading the selection:** `IGridControl.SelectedCells` is `public BlockOfCellsCollection
+SelectedCells { get; set; }`. The getter (`GridControl.get_SelectedCells`, decoded) builds a
+fresh `BlockOfCellsCollection` from the internal `SelectionManager.SelectedBlocks` and runs it
+through `AdjustColumnIndexesInSelectedCells` (a storage-index → UI-column-index remap that is a
+no-op whenever `SelectionType != SingleRow`, which — per Q2 — is always true for SSMS's results
+grid, so the returned column indexes are exactly the ones read off IL above, with no further
+adjustment needed). Enumerate it as `foreach (BlockOfCells b in grid.SelectedCells)`.
+
+### Manual check for the user (2 steps each, plain language)
+
+**Check A — does right-click move the selection? (confirms Q1)**
+
+1. Run any query returning at least 6-8 rows. Click a row's row-number cell on the left to select
+   that whole row (it turns blue), and Ctrl+click a second, non-adjacent row so two separate rows
+   are highlighted. Now **right-click inside one of the two highlighted rows**. Watch whether the
+   blue highlighting on *both* rows stays exactly as it was before you right-clicked (dismiss the
+   menu with Escape first if it's in the way of seeing the grid).
+2. Now right-click a **different row that was not highlighted**. The blue highlighting should
+   jump to that single new row and the previous selection should disappear. If step 1 preserves
+   both blue rows and step 2 collapses to just the clicked row, this confirms the spike's finding
+   exactly.
+
+**Check B — how row selection and Select All behave (confirms Q2, indirectly)**
+
+1. Click a row-number cell to select one whole row, then click a second row-number cell further
+   down while holding **Shift**. All rows between the two clicks should highlight as one
+   continuous block — this is the "drag/extend" behavior the `Height`/`OriginalY` fields exist
+   for.
+2. Press **Ctrl+A** with a large result set open (a few thousand rows is enough to feel it). The
+   whole grid should highlight **instantly**, with no visible pause — if Select All had to touch
+   every row individually on a huge result set it would noticeably lag; instant highlighting is
+   the user-visible evidence that it is built as a single range (as the spike's IL reading found),
+   not one block per row.

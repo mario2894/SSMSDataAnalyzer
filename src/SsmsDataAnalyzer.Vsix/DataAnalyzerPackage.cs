@@ -63,6 +63,12 @@ namespace SsmsDataAnalyzer.Vsix
     // conventionally behave, and MultiInstances = 0 (the default) is correct since
     // ResultsGridFindCommand always shows/reuses id 0, never creates a second instance.
     [ProvideToolWindow(typeof(ResultsGrid.GridFindToolWindow))]
+    // docs/pivot-plan.md: "Pivot selected rows..." tool window. Same reasoning as
+    // GridFindToolWindow just above — a transient, context-menu-opened utility window, not a
+    // persistent panel, so no docking-group Window GUID and MultiInstances stays at its
+    // default (0): PivotRowsCommand always shows/reuses id 0 (Phase 3 item 12 covers true
+    // multi-instance).
+    [ProvideToolWindow(typeof(Pivot.PivotToolWindow))]
     [ProvideOptionPage(typeof(DataAnalyzerOptionsPage), "SSMS Data Analyzer", "General", 0, 0, true)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
@@ -87,6 +93,7 @@ namespace SsmsDataAnalyzer.Vsix
             await Commands.AnalyzeDataCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridSourceCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridFindCommand.InitializeAsync(this);
+            await Pivot.PivotRowsCommand.InitializeAsync(this);
 
             // Query-editor "Paste as SQL IN (...)". Registered on the package's own command
             // service, like every other command here. Unlike the results-grid features this
@@ -139,6 +146,13 @@ namespace SsmsDataAnalyzer.Vsix
                 ThreadHelper.ThrowIfNotOnUIThread();
                 var page = (DataAnalyzerOptionsPage)GetDialogPage(typeof(DataAnalyzerOptionsPage));
                 return page.AutoExecuteGoToSourceQuery;
+            };
+            // "Pivot row limit" (docs/pivot-plan.md section 10) — same fresh-read-per-call shape.
+            Options.OptionsAccessor.PivotRowLimitProvider = () =>
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var page = (DataAnalyzerOptionsPage)GetDialogPage(typeof(DataAnalyzerOptionsPage));
+                return page.PivotRowLimit;
             };
         }
 

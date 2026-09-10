@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using Microsoft.VisualStudio.Shell;
 using SsmsDataAnalyzer.Core.Model;
+using SsmsDataAnalyzer.Core.Pivot;
 
 namespace SsmsDataAnalyzer.Vsix.Options
 {
@@ -20,6 +21,12 @@ namespace SsmsDataAnalyzer.Vsix.Options
         [Description("When a 'Go to source' query window opens (from the tool window's Min/Max/table jump, or the results grid's right-click), run it immediately instead of leaving it for review. The generated queries are always bounded and read-only (SELECT TOP (1000) ... for the table jump, or a single-key-filtered SELECT for the value jump). Only executes when the new window is actually connected to the same server/database as where you clicked \"Go to source\" -- otherwise the query is left in place, unexecuted, and the status line says so. Turn off to always review before running.")]
         [DefaultValue(true)]
         public bool AutoExecuteGoToSourceQuery { get; set; } = true;
+
+        [Category("Pivot")]
+        [DisplayName("Pivot row limit")]
+        [Description("Maximum number of selected rows 'Pivot selected rows...' turns sideways in one window (docs/pivot-plan.md). Higher selections still show a truncated-count banner rather than failing. Clamped to 1-500 (PivotBuilder.MinRowLimit/MaxRowLimit) regardless of what is typed here.")]
+        [DefaultValue(PivotBuilder.DefaultRowLimit)]
+        public int PivotRowLimit { get; set; } = PivotBuilder.DefaultRowLimit;
 
         [Category("Object Explorer integration")]
         [DisplayName("Enable right-click Analyze Data (experimental)")]

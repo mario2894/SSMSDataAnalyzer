@@ -101,6 +101,25 @@
       </Button>
 
       <!--
+        docs/pivot-plan.md "Pivot selected rows...". Same results-grid menu group as
+        cmdidGridFind/cmdidGoToSourceForValue, but deliberately NOT DefaultInvisible/
+        DynamicVisibility — U1 pivot-shell's brief calls this out explicitly, matching the
+        NOTE below about cmdidPasteAsSqlIn: those flags keep a command hidden until the
+        package has loaded and BeforeQueryStatus can vote on visibility, which hid a command
+        entirely in a cold session before. PivotRowsCommand.Execute degrades to a status-bar
+        message when there is no grid/selection instead. CanonicalName lets a keyboard
+        shortcut be assigned (lead-allocated, plan section 10).
+      -->
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPivotRows" priority="0x0120" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" />
+        <Strings>
+          <ButtonText>Pivot selected rows...</ButtonText>
+          <CanonicalName>SsmsDataAnalyzer.PivotRows</CanonicalName>
+          <LocCanonicalName>SsmsDataAnalyzer.PivotRows</LocCanonicalName>
+        </Strings>
+      </Button>
+
+      <!--
         NOTE: deliberately NOT DefaultInvisible/DynamicVisibility, unlike the results-grid
         buttons. Those flags keep a command hidden until the package is loaded and its
         BeforeQueryStatus can vote on visibility — which means that in a session where nothing
@@ -148,6 +167,13 @@
     <CommandPlacement guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPasteAsNumericSqlIn" priority="0x0210">
       <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
     </CommandPlacement>
+
+    <!-- docs/pivot-plan.md: Tools menu entry point for "Pivot selected rows...", same
+         "second menu via CommandPlacement, not a second Button" rule as the paste commands
+         above. -->
+    <CommandPlacement guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPivotRows" priority="0x0220">
+      <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
+    </CommandPlacement>
   </CommandPlacements>
 
 
@@ -161,6 +187,7 @@
       <IDSymbol name="ResultsGridMenuGroup" value="0x1040" />
       <IDSymbol name="cmdidGoToSourceForValue" value="0x0200" />
       <IDSymbol name="cmdidGridFind" value="0x0201" />
+      <IDSymbol name="cmdidPivotRows" value="0x0202" />
       <IDSymbol name="QueryEditorMenuGroup" value="0x1050" />
       <IDSymbol name="cmdidPasteAsSqlIn" value="0x0300" />
       <IDSymbol name="cmdidPasteAsNumericSqlIn" value="0x0301" />
