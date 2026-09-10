@@ -294,10 +294,26 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
         {
             await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            // id: 0 — single shared instance for now (Phase 3 item 12 is multi-instance).
+            // docs/pivot-plan.md §4 item 12: each "Pivot selected rows..." opens a NEW window
+            // instance instead of reusing/replacing the previous one (MultiInstances = true on
+            // PivotToolWindow's ProvideToolWindow attribute). Take the first id that is either
+            // unused or belongs to a CLOSED window. Closing a VS tool window only hides it — the
+            // pane (with its old snapshot and captured connection) stays alive and
+            // FindToolWindowAsync keeps returning it — so "first id with no pane" alone would
+            // number tabs ever higher and keep every closed pivot in memory. Rebinding a hidden
+            // pane replaces its snapshot and cancels its old FK resolve (PivotViewModel.Load).
+            int id = 0;
+            while (true)
+            {
+                var existing = await _package.FindToolWindowAsync(typeof(PivotToolWindow), id, create: false, cancellationToken: CancellationToken.None);
+                if (existing == null) break;
+                if (existing.Frame is IVsWindowFrame frame && frame.IsVisible() != Microsoft.VisualStudio.VSConstants.S_OK) break;
+                id++;
+            }
+
             var pane = await _package.ShowToolWindowAsync(
                 typeof(PivotToolWindow),
-                id: 0,
+                id,
                 create: true,
                 cancellationToken: CancellationToken.None) as PivotToolWindow;
 
@@ -306,6 +322,11 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 OeDiagnostics.Error("'Pivot selected rows' could not create/show its tool window.");
                 return;
             }
+
+            // Short, distinguishing caption: "Pivot 1", "Pivot 2 (ID)" ... — the first pivoted
+            // column's name as an optional suffix, kept short so it doesn't dominate the tab.
+            string firstColumnName = result.Columns.Count > 0 ? result.Columns[0].DisplayName : null;
+            pane.SetCaption(id, firstColumnName);
 
             pane.Bind(result, fkLinks);
         }

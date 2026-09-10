@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.12.1**
+**`SsmsDataAnalyzer.vsix` — version 0.13.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.13.0** — Pivot extras: a **Header** dropdown labels each pivot column by a chosen column's value (e.g. `ID = 4522`) instead of `Row 7`; every pivot now opens in its own tab (Pivot 1, Pivot 2, …) instead of replacing the previous one; right-click → **Copy as Markdown table** copies what's currently shown, ready for Jira or Confluence. Also: "Go to source" no longer writes clicked cell values into SSMS's ActivityLog — the full message is still shown on the status bar.
 
 **0.12.1** — Pivot look: cells now have vertical grid lines and the link icon has space around it, so it clearly belongs to its own value instead of seeming to point at the next column. The icon is now "open in new window" rather than an arrow.
 

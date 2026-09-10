@@ -12,10 +12,12 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
     /// focus/routing for its own registered tool windows, which a floating Window could not
     /// reliably get inside the SSMS host.
     ///
-    /// Single shared instance (id: 0) for now, matching GridFindToolWindow — Phase 3 item 12
-    /// ("multiple pivots" / multi-instance tool window) is explicitly out of scope here.
-    /// PivotRowsCommand always shows/reuses id 0 and calls <see cref="Bind"/> to re-point it
-    /// at the newest pivot snapshot.
+    /// Multi-instance (docs/pivot-plan.md §4 item 12): PivotToolWindow's ProvideToolWindow
+    /// attribute in DataAnalyzerPackage carries MultiInstances = true, and PivotRowsCommand
+    /// creates/shows a fresh instance id per "Pivot selected rows..." invocation instead of
+    /// reusing a single shared id 0. Each instance owns its own snapshot, its own
+    /// PivotViewModel/PivotFkLinks resolve, and its own <see cref="Dispose"/> — closing one
+    /// window cancels only that window's in-flight FK resolution.
     /// </summary>
     [Guid(PackageGuids.PivotToolWindowPersistenceGuidString)]
     public sealed class PivotToolWindow : ToolWindowPane
@@ -42,6 +44,25 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                     (s, e) => _view.SelectAllCommand(),
                     new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.SelectAll)));
             }
+        }
+
+        /// <summary>docs/pivot-plan.md §4 item 12: sets this instance's tab caption to
+        /// "Pivot N" (1-based, from its multi-instance id), with an optional short suffix
+        /// (the first pivoted column's name) so tabs are distinguishable at a glance. Called
+        /// once, right after PivotRowsCommand creates/shows this instance.</summary>
+        internal void SetCaption(int id, string firstColumnName)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var caption = "Pivot " + (id + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(firstColumnName))
+            {
+                const int maxSuffixLength = 20;
+                var suffix = firstColumnName.Length > maxSuffixLength
+                    ? firstColumnName.Substring(0, maxSuffixLength) + "…"
+                    : firstColumnName;
+                caption += " (" + suffix + ")";
+            }
+            Caption = caption;
         }
 
         /// <summary>The single authoritative way to (re)target this window at a fresh pivot

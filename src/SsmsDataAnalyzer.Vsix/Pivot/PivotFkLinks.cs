@@ -214,9 +214,11 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 }
 
                 var openResult = await QueryWindowAccessor.TryOpenAsync(sql, targetConnectionString, _owner.Connection).ConfigureAwait(true);
+                // The success text names the filter value ("... = 17"): status bar only. The
+                // failure reason comes from the query-window API and carries no cell value.
                 await _owner.ShowStatusAsync(openResult.Success
                     ? statusMessage
-                    : $"Go to source: could not open a query window: {openResult.Reason}", log: true);
+                    : $"Go to source: could not open a query window: {openResult.Reason}", log: !openResult.Success);
             }
             catch (Exception ex)
             {

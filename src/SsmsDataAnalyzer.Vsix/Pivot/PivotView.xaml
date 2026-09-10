@@ -45,6 +45,14 @@
         <local:PivotFkVisibilityConverter x:Key="FkVisibilityConverter" />
         <local:PivotFkGoTooltipConverter x:Key="FkGoTooltipConverter" />
 
+        <!-- docs/pivot-plan.md §4 item 11: implicit template for a value column's Header
+             (PivotColumnHeaderInfo) — matched by DataType, so PivotView.xaml.cs can relabel a
+             header by assigning a new PivotColumnHeaderInfo without rebuilding the column. The
+             "Column" header stays a plain string and is unaffected (default header rendering). -->
+        <DataTemplate DataType="{x:Type local:PivotColumnHeaderInfo}">
+            <TextBlock Text="{Binding Text, Mode=OneWay}" ToolTip="{Binding Tooltip, Mode=OneWay}" />
+        </DataTemplate>
+
         <!-- Flat icon button (plan §12 / §5 item 5): no chrome, hover tint from theme, never a
              tab stop (Focusable/IsTabStop are set in code-behind alongside this style, since
              the per-cell button is built dynamically in PivotView.xaml.cs). -->
@@ -131,6 +139,15 @@
             <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,4,0" />
             <TextBox x:Name="FilterTextBox" Width="200" VerticalAlignment="Center"
                      Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+            <!-- docs/pivot-plan.md §4 item 11: relabels each value column's header from
+                 "Row N" to "<chosen column> = <that row's value>". Not persisted (reset to
+                 "Row number" on every new pivot, see PivotViewModel.Load); SelectedItem is a
+                 plain read/write VM property, not derived snapshot data, so a normal (two-way)
+                 SelectedItem binding is fine here. -->
+            <TextBlock Text="Header:" VerticalAlignment="Center" Margin="14,0,4,0" />
+            <ComboBox x:Name="HeaderComboBox" Width="160" VerticalAlignment="Center"
+                      ItemsSource="{Binding HeaderColumnOptions}"
+                      SelectedItem="{Binding SelectedHeaderOption}" />
         </StackPanel>
 
         <!--
@@ -175,6 +192,11 @@
             <DataGrid.ContextMenu>
                 <ContextMenu Opened="PivotGridContextMenu_Opened">
                     <MenuItem x:Name="GoToSourceMenuItem" Header="Go to source…" Click="GoToSourceMenuItem_Click" IsEnabled="False" />
+                    <Separator />
+                    <!-- docs/pivot-plan.md §4 item 14: copies the CURRENTLY VISIBLE pivot
+                         (respecting Show only differing / Hide all-NULL / Filter) with the
+                         current header labels (item 11) as a Markdown table. -->
+                    <MenuItem Header="Copy as Markdown table" Click="CopyAsMarkdownMenuItem_Click" />
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>

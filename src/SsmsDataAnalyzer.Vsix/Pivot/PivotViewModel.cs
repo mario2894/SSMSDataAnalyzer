@@ -23,6 +23,14 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
     /// </summary>
     internal sealed class PivotViewModel : INotifyPropertyChanged
     {
+        /// <summary>docs/pivot-plan.md §4 item 11: the default "Header:" chooser entry —
+        /// value columns keep today's "Row N" header.</summary>
+        internal const string RowNumberHeaderOption = "Row number";
+
+        /// <summary>Trim length for a header built from a column's value (item 11) — the full
+        /// text still appears in the header tooltip.</summary>
+        private const int HeaderValueMaxLength = 30;
+
         private readonly List<PivotRowItem> _allItems = new List<PivotRowItem>();
 
         private int _snapshotVersion;
@@ -102,6 +110,38 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             set { _filterText = value ?? string.Empty; OnPropertyChanged(); Items.Refresh(); }
         }
 
+        private IReadOnlyList<string> _headerColumnOptions = new[] { RowNumberHeaderOption };
+        /// <summary>docs/pivot-plan.md §4 item 11: "Row number" first, then every pivot
+        /// column's DisplayName, in grid order. Rebuilt on every <see cref="Load(PivotResult)"/>.</summary>
+        public IReadOnlyList<string> HeaderColumnOptions
+        {
+            get => _headerColumnOptions;
+            private set { _headerColumnOptions = value; OnPropertyChanged(); }
+        }
+
+        private string _selectedHeaderOption = RowNumberHeaderOption;
+        /// <summary>Which column's value labels the value-column headers (item 11). Not part
+        /// of the snapshot and never persisted — reset to "Row number" on every Load.
+        /// Changing it only relabels headers (see PivotView.xaml.cs RefreshColumnHeaders); it
+        /// never touches _allItems, so FK bindings/icons are unaffected.</summary>
+        public string SelectedHeaderOption
+        {
+            get => _selectedHeaderOption;
+            set
+            {
+                var next = string.IsNullOrEmpty(value) ? RowNumberHeaderOption : value;
+                if (string.Equals(_selectedHeaderOption, next, StringComparison.Ordinal)) return;
+                _selectedHeaderOption = next;
+                OnPropertyChanged();
+                HeaderOptionChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>Fired when <see cref="SelectedHeaderOption"/> changes — PivotView.xaml.cs
+        /// relabels the existing "Row N"/value columns' headers in response (item 11); no
+        /// column rebuild, no data reload.</summary>
+        public event EventHandler HeaderOptionChanged;
+
         public PivotViewModel()
         {
             Items = CollectionViewSource.GetDefaultView(_allItems);
@@ -154,6 +194,17 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             _fkLinkMap = null;
             UpdateBannerAndStatus();
 
+            // item 11: a fresh pivot always starts on "Row number" (not persisted across
+            // Loads) and offers this snapshot's own columns as header choices.
+            var headerOptions = new List<string>(_allItems.Count + 1) { RowNumberHeaderOption };
+            foreach (var item in _allItems) headerOptions.Add(item.DisplayName);
+            HeaderColumnOptions = headerOptions;
+            if (!string.Equals(_selectedHeaderOption, RowNumberHeaderOption, StringComparison.Ordinal))
+            {
+                _selectedHeaderOption = RowNumberHeaderOption;
+                OnPropertyChanged(nameof(SelectedHeaderOption));
+            }
+
             // Fire ColumnsChanged before Items.Refresh(): the code-behind rebuilds the "Row N"
             // DataGrid columns first, so by the time filtered rows repaint the bindings they
             // reference already exist.
@@ -199,6 +250,56 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             if (map == null || row == null) return;
             if (rowIndex < 0 || rowIndex >= row.Values.Length) return;
             map.BeginGo(row.GridOrdinal, row.Values[rowIndex]);
+        }
+
+        /// <summary>docs/pivot-plan.md §4 item 11: the header text/tooltip for one value
+        /// column, honoring <see cref="SelectedHeaderOption"/>. <paramref name="rowIndex"/> is
+        /// the 0-based position in <see cref="Rows"/>/PivotRowItem.Values; <paramref
+        /// name="gridRow"/> is that same row's 0-based grid row number (Rows[rowIndex]).
+        /// Pure — reads _allItems, never rebuilds it.</summary>
+        internal PivotColumnHeaderInfo GetHeaderInfo(int rowIndex, long gridRow)
+        {
+            var rowLabel = "Row " + (gridRow + 1).ToString(CultureInfo.InvariantCulture);
+            if (string.Equals(_selectedHeaderOption, RowNumberHeaderOption, StringComparison.Ordinal))
+                return new PivotColumnHeaderInfo(rowLabel, null);
+
+            foreach (var item in _allItems)
+            {
+                if (!string.Equals(item.DisplayName, _selectedHeaderOption, StringComparison.Ordinal)) continue;
+                if (rowIndex < 0 || rowIndex >= item.Values.Length) break;
+
+                var full = item.Values[rowIndex] ?? string.Empty;
+                var trimmed = full.Length > HeaderValueMaxLength
+                    ? full.Substring(0, HeaderValueMaxLength) + "…"
+                    : full;
+                var text = item.DisplayName + " = " + trimmed;
+                var tooltip = item.DisplayName + " = " + full + " · " + rowLabel;
+                return new PivotColumnHeaderInfo(text, tooltip);
+            }
+
+            // Chosen column no longer exists in this snapshot (shouldn't happen — options are
+            // rebuilt every Load) — fall back to the default rather than throw.
+            return new PivotColumnHeaderInfo(rowLabel, null);
+        }
+
+        /// <summary>docs/pivot-plan.md §4 item 14: the currently VISIBLE pivot (i.e. after
+        /// Show-only-differing / Hide-all-NULL / Filter), in the current header labels (item
+        /// 11), as header texts + rows of cell strings ready for PivotMarkdown.Build. Never
+        /// touches the clipboard itself — PivotView.xaml.cs owns that.</summary>
+        internal void GetVisibleMarkdownData(out List<string> headers, out List<IReadOnlyList<string>> rows)
+        {
+            headers = new List<string> { "Column" };
+            for (var i = 0; i < Rows.Count; i++)
+                headers.Add(GetHeaderInfo(i, Rows[i]).Text);
+
+            rows = new List<IReadOnlyList<string>>();
+            foreach (var obj in Items)
+            {
+                if (!(obj is PivotRowItem item)) continue;
+                var row = new List<string>(item.Values.Length + 1) { item.DisplayName };
+                row.AddRange(item.Values);
+                rows.Add(row);
+            }
         }
 
         private void ApplyResolved(int snapshotVersion, PivotFkLinkMap map)
@@ -265,5 +366,22 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
 
         private void OnPropertyChanged([CallerMemberName] string propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    /// <summary>docs/pivot-plan.md §4 item 11: one value column's header (Text) plus its
+    /// optional tooltip (full untrimmed text + "Row N"; null when the default "Row N" header
+    /// is in effect). Immutable — PivotView.xaml.cs assigns a fresh instance to
+    /// DataGridColumn.Header each time the header relabels; matched by an implicit DataTemplate
+    /// in PivotView.xaml (DataType lookup), so no column/template rebuild is needed.</summary>
+    internal sealed class PivotColumnHeaderInfo
+    {
+        public PivotColumnHeaderInfo(string text, string tooltip)
+        {
+            Text = text;
+            Tooltip = tooltip;
+        }
+
+        public string Text { get; }
+        public string Tooltip { get; }
     }
 }

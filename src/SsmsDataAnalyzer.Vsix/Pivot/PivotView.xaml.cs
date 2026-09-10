@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using SsmsDataAnalyzer.Core.Pivot;
+using SsmsDataAnalyzer.Vsix.ObjectExplorer;
 
 namespace SsmsDataAnalyzer.Vsix.Pivot
 {
@@ -31,6 +32,9 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             InitializeComponent();
             _viewModel = new PivotViewModel();
             _viewModel.ColumnsChanged += (s, e) => RebuildRowColumns();
+            // docs/pivot-plan.md §4 item 11: relabel existing headers in place — no column
+            // rebuild, no data reload, FK bindings/icons untouched.
+            _viewModel.HeaderOptionChanged += (s, e) => RefreshColumnHeaders();
             DataContext = _viewModel;
         }
 
@@ -92,6 +96,20 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             var rows = _viewModel.Rows;
             for (var i = 0; i < rows.Count; i++)
                 PivotGrid.Columns.Add(BuildValueColumn(i, rows[i]));
+        }
+
+        /// <summary>docs/pivot-plan.md §4 item 11: relabels the existing "Row N"/value columns'
+        /// headers in place (Header only — CellTemplate/bindings untouched) after the "Header:"
+        /// chooser selection changes. No column rebuild, no PivotViewModel.Load.</summary>
+        private void RefreshColumnHeaders()
+        {
+            var rows = _viewModel.Rows;
+            for (var i = 1; i < PivotGrid.Columns.Count; i++)
+            {
+                var rowIndex = i - 1;
+                if (rowIndex >= rows.Count) continue;
+                PivotGrid.Columns[i].Header = _viewModel.GetHeaderInfo(rowIndex, rows[rowIndex]);
+            }
         }
 
         /// <summary>
@@ -160,7 +178,10 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
 
             return new DataGridTemplateColumn
             {
-                Header = "Row " + (gridRow + 1).ToString(CultureInfo.InvariantCulture),
+                // item 11: built via the view model so a freshly-created column already
+                // reflects the current "Header:" selection (normally "Row number" right after
+                // Load — see PivotViewModel.Load resetting SelectedHeaderOption).
+                Header = _viewModel.GetHeaderInfo(rowIndex, gridRow),
                 Width = 110,
                 CellTemplate = new DataTemplate { VisualTree = panelFactory },
                 // Ctrl+C pitfall (§12): DataGridTemplateColumn copies nothing by default — this
@@ -212,6 +233,27 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             ThreadHelper.ThrowIfNotOnUIThread();
             if (_contextMenuRow != null)
                 _viewModel.GoToSource(_contextMenuRow, _contextMenuRowIndex);
+        }
+
+        /// <summary>docs/pivot-plan.md §4 item 14: copies the currently VISIBLE pivot (post
+        /// Show-only-differing / Hide-all-NULL / Filter, item 11's current header labels) as a
+        /// Markdown table, via the pure Core formatter (PivotMarkdown.Build) so this method
+        /// does no formatting of its own. Clipboard access can fail (another app holds the
+        /// clipboard open) — caught, reported to the status bar, never an unhandled
+        /// exception, and the failure is never logged with cell values (Token rules #8).</summary>
+        private void CopyAsMarkdownMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                _viewModel.GetVisibleMarkdownData(out var headers, out var rows);
+                var markdown = PivotMarkdown.Build(headers, rows);
+                System.Windows.Clipboard.SetText(markdown);
+            }
+            catch (System.Exception ex)
+            {
+                OeDiagnostics.Error("'Pivot selected rows': Copy as Markdown table failed (clipboard may be in use)", ex);
+            }
         }
     }
 }

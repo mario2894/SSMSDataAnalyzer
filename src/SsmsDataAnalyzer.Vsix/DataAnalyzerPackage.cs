@@ -68,7 +68,7 @@ namespace SsmsDataAnalyzer.Vsix
     // persistent panel, so no docking-group Window GUID and MultiInstances stays at its
     // default (0): PivotRowsCommand always shows/reuses id 0 (Phase 3 item 12 covers true
     // multi-instance).
-    [ProvideToolWindow(typeof(Pivot.PivotToolWindow))]
+    [ProvideToolWindow(typeof(Pivot.PivotToolWindow), MultiInstances = true)]
     [ProvideOptionPage(typeof(DataAnalyzerOptionsPage), "SSMS Data Analyzer", "General", 0, 0, true)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]

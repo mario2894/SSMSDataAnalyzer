@@ -243,7 +243,11 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
 
                 if (!result.Success)
                 {
-                    await ShowStatusAsync(result.StatusMessage);
+                    // Not logged verbatim: a decline (e.g. "this value can't be safely turned into
+                    // SQL") can quote the clicked cell, and cell values must never reach the
+                    // ActivityLog. The shape dumps the resolver logs carry column metadata only.
+                    OeDiagnostics.Info("Go to source: declined (reason shown on the status bar only; it may contain a cell value).");
+                    await ShowStatusAsync(result.StatusMessage, log: false);
                     return;
                 }
 
@@ -253,9 +257,16 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 // QueryWindowAccessor.TryOpenAsync's doc comment for why that was leaving new
                 // windows "Disconnected."
                 var openResult = await QueryWindowAccessor.TryOpenAsync(result.GeneratedSql, result.TargetConnectionString, ci).ConfigureAwait(true);
-                await ShowStatusAsync(openResult.Success
-                    ? result.StatusMessage
-                    : $"Go to source: could not open a query window: {openResult.Reason}");
+                if (openResult.Success)
+                {
+                    // The success text names the filter value ("... = 17") — status bar only.
+                    OeDiagnostics.Info("Go to source: opened a query window for the referenced row.");
+                    await ShowStatusAsync(result.StatusMessage, log: false);
+                }
+                else
+                {
+                    await ShowStatusAsync($"Go to source: could not open a query window: {openResult.Reason}");
+                }
             }
             catch (Exception ex)
             {
@@ -307,10 +318,12 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         /// nothing. Deliberately has NO risky type reference of its own, so it is safe to call
         /// from the SHELL (the unsupported-build case) as well as from Core.
         /// </summary>
-        private async Task ShowStatusAsync(string message)
+        private async Task ShowStatusAsync(string message, bool log = true)
         {
             await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
-            OeDiagnostics.Info(message);
+            // log: false for any message that can quote a cell value (see ExecuteAsync) — the
+            // same rule as PivotFkLinks.ShowStatusAsync.
+            if (log) OeDiagnostics.Info(message);
             try
             {
                 var statusBar = ((IServiceProvider)_package).GetService(typeof(SVsStatusbar)) as IVsStatusbar;

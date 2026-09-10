@@ -1,8 +1,9 @@
 # Pivot selected rows — development plan
 
 Status: **Phase 1 + 2 shipped and confirmed live (v0.11.0 / v0.11.1).** Phase 3 **item 13 (FK
-link icons) shipped in v0.12.0/0.12.1 and confirmed live** (user go-ahead 2026-09-10; items 11,
-12, 14 not requested). U2 hit a usage limit before building; the lead finished it (fixed a
+link icons) shipped in v0.12.0/0.12.1 and confirmed live**; items 11 (header from a column),
+12 (multiple pivots as tabs) and 14 (copy as Markdown) shipped in v0.13.0, awaiting live
+check. Bigger features (dead-column report, snapshot/compare) declined by the user. U2 hit a usage limit before building; the lead finished it (fixed a
 non-existent theme brush key and added UI-thread guards).
 Decisions D1–D3 were built as recommended; D4 is resolved: FK icons are done as Phase 3,
 after Phases 1 and 2 shipped. Team: R1 (Opus) → U2 (Sonnet), interface in §12 (written by
