@@ -108,6 +108,11 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
 
         internal UIConnectionInfo Connection => _connection;
 
+        /// <summary>Peek source's shared engine (SsmsDataAnalyzer.Vsix.Peek.PeekRunner) needs
+        /// an AsyncPackage to show/re-target the tool window — exposed here rather than each
+        /// caller threading its own package reference through the pivot view model.</summary>
+        internal AsyncPackage Package => _package;
+
         /// <summary>Status bar + (optionally) ActivityLog, on the UI thread. Never throws.</summary>
         internal async Task ShowStatusAsync(string message, bool log)
         {
@@ -192,33 +197,18 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
         {
             try
             {
-                // Not logged: a decline can now carry SQL Server's error text, which may quote the query.
-                if (DeclineReason != null) { await _owner.ShowStatusAsync(DeclineReason, log: false); return; }
-
-                var c = Get(gridOrdinal);
-                if (c == null) { await _owner.ShowStatusAsync("Go to source: could not match this column to the described query.", log: true); return; }
-                if (!c.IsLink) { await _owner.ShowStatusAsync(c.DeclineMessage, log: true); return; }
-
-                // Same order as ResolveAsync(Request): target connection, then the literal.
-                string targetConnectionString = _owner.BuildConnectionStringForDatabase(c.Described.SourceDatabase);
-                if (targetConnectionString == null)
+                var built = TryBuildPeekRequest(gridOrdinal, cellDisplayText, out var declineMessage, out var declineIsLoggable);
+                if (built == null)
                 {
-                    await _owner.ShowStatusAsync(ResultsGridGoToSourceResolver.CouldNotBuildTargetConnectionMessage, log: true);
+                    await _owner.ShowStatusAsync(declineMessage, log: declineIsLoggable);
                     return;
                 }
 
-                if (!ResultsGridGoToSourceResolver.TryBuildJump(c.ForeignKeyColumn, c.Described, c.GridColumnName, cellDisplayText, c.MatchCount, out var sql, out var statusMessage))
-                {
-                    // The formatter's decline can quote the display text: status bar only, never logged.
-                    await _owner.ShowStatusAsync(statusMessage, log: false);
-                    return;
-                }
-
-                var openResult = await QueryWindowAccessor.TryOpenAsync(sql, targetConnectionString, _owner.Connection).ConfigureAwait(true);
+                var openResult = await QueryWindowAccessor.TryOpenAsync(built.Sql, built.TargetConnectionString, _owner.Connection).ConfigureAwait(true);
                 // The success text names the filter value ("... = 17"): status bar only. The
                 // failure reason comes from the query-window API and carries no cell value.
                 await _owner.ShowStatusAsync(openResult.Success
-                    ? statusMessage
+                    ? built.StatusMessage
                     : $"Go to source: could not open a query window: {openResult.Reason}", log: !openResult.Success);
             }
             catch (Exception ex)
@@ -235,7 +225,77 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 .FileAndForget("SsmsDataAnalyzer/Pivot/FkLinks/Go");
         }
 
+        /// <summary>
+        /// "Peek source…" (pivot cell context menu): the same jump-building steps
+        /// <see cref="GoAsync"/> uses (whole-pivot decline check, column resolution,
+        /// <see cref="ResultsGridGoToSourceResolver.TryBuildJump"/>), but returned instead of
+        /// opened in a query window — SsmsDataAnalyzer.Vsix.Peek.PeekRunner is the caller.
+        /// Never throws; an exception building the request comes back as a decline instead,
+        /// same as GoAsync's own catch block.
+        /// </summary>
+        internal PeekRequest TryBuildPeekRequest(int gridOrdinal, string cellDisplayText, out string declineMessage, out bool declineIsLoggable)
+        {
+            try
+            {
+                // Not logged: a decline can carry SQL Server's error text, which may quote the query.
+                if (DeclineReason != null) { declineMessage = DeclineReason; declineIsLoggable = false; return null; }
+
+                var c = Get(gridOrdinal);
+                if (c == null) { declineMessage = "Go to source: could not match this column to the described query."; declineIsLoggable = true; return null; }
+                if (!c.IsLink) { declineMessage = c.DeclineMessage; declineIsLoggable = true; return null; }
+
+                // Same order as ResolveAsync(Request): target connection, then the literal.
+                string targetConnectionString = _owner.BuildConnectionStringForDatabase(c.Described.SourceDatabase);
+                if (targetConnectionString == null)
+                {
+                    declineMessage = ResultsGridGoToSourceResolver.CouldNotBuildTargetConnectionMessage;
+                    declineIsLoggable = true;
+                    return null;
+                }
+
+                if (!ResultsGridGoToSourceResolver.TryBuildJump(c.ForeignKeyColumn, c.Described, c.GridColumnName, cellDisplayText, c.MatchCount, out var sql, out var statusMessage))
+                {
+                    // The formatter's decline can quote the display text: status bar only, never logged.
+                    declineMessage = statusMessage;
+                    declineIsLoggable = false;
+                    return null;
+                }
+
+                declineMessage = null;
+                declineIsLoggable = false;
+                return new PeekRequest(sql, targetConnectionString, statusMessage, c.ForeignKeyColumn.ReferencedQualifiedName);
+            }
+            catch (Exception ex)
+            {
+                OeDiagnostics.Error("Pivot FK link 'Peek source' failed", ex);
+                declineMessage = "Go to source: " + ex.Message;
+                declineIsLoggable = true;
+                return null;
+            }
+        }
+
         private ResultsGridGoToSourceResolver.ColumnLink Get(int gridOrdinal) =>
             gridOrdinal >= 1 && gridOrdinal <= _columns.Count ? _columns[gridOrdinal - 1] : null;
+    }
+
+    /// <summary>What "Peek source…" needs to run and show one referenced row — the same
+    /// pieces <see cref="PivotFkLinkMap.GoAsync"/> would hand to QueryWindowAccessor, redirected
+    /// to SsmsDataAnalyzer.Vsix.Peek.PeekRunner instead. Carries no cell value (SQL/StatusMessage
+    /// may contain the literal, exactly as Go to source's own GeneratedSql/StatusMessage do;
+    /// both are status-bar-only, never logged verbatim — see PivotFkLinkMap.GoAsync).</summary>
+    internal sealed class PeekRequest
+    {
+        internal PeekRequest(string sql, string targetConnectionString, string statusMessage, string targetQualifiedName)
+        {
+            Sql = sql;
+            TargetConnectionString = targetConnectionString;
+            StatusMessage = statusMessage;
+            TargetQualifiedName = targetQualifiedName;
+        }
+
+        internal string Sql { get; }
+        internal string TargetConnectionString { get; }
+        internal string StatusMessage { get; }
+        internal string TargetQualifiedName { get; }
     }
 }

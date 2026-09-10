@@ -69,6 +69,13 @@ namespace SsmsDataAnalyzer.Vsix
     // default (0): PivotRowsCommand always shows/reuses id 0 (Phase 3 item 12 covers true
     // multi-instance).
     [ProvideToolWindow(typeof(Pivot.PivotToolWindow), MultiInstances = true)]
+    // "Peek source for this value" — a small floating, transient, CLOSE-QUICKLY tool window
+    // (see Peek.PeekToolWindow's doc comment): shows the referenced record right away instead
+    // of opening a new query tab. Style = Float (never docked by default) + fixed starting
+    // size + Transient = true (VS does not persist/restore it across sessions, unlike
+    // ProfileToolWindow) match "glance at it, close it" rather than a panel the user navigates
+    // back to.
+    [ProvideToolWindow(typeof(Peek.PeekToolWindow), Style = VsDockStyle.Float, Width = 520, Height = 420, Transient = true)]
     [ProvideOptionPage(typeof(DataAnalyzerOptionsPage), "SSMS Data Analyzer", "General", 0, 0, true)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
@@ -92,6 +99,7 @@ namespace SsmsDataAnalyzer.Vsix
 
             await Commands.AnalyzeDataCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridSourceCommand.InitializeAsync(this);
+            await ResultsGrid.ResultsGridPeekCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridFindCommand.InitializeAsync(this);
             await Pivot.PivotRowsCommand.InitializeAsync(this);
 

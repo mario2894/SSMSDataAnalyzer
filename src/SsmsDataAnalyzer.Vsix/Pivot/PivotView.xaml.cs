@@ -54,6 +54,16 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             _viewModel.Load(result, fkLinks);
         }
 
+        /// <summary>"Peek source for this value" (PeekToolWindow): same as
+        /// <see cref="Bind(PivotResult, PivotFkLinks)"/>, plus a banner override — a peeked
+        /// record's banner reads "N row(s) from [schema].[table] where ..." rather than the
+        /// pivot's own "Showing X of Y selected rows..." text. See PivotViewModel.Load.</summary>
+        internal void Bind(PivotResult result, PivotFkLinks fkLinks, string bannerOverride)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _viewModel.Load(result, fkLinks, bannerOverride);
+        }
+
         /// <summary>Called from PivotToolWindow's close/dispose path (§12) to cancel any
         /// in-flight FK resolution for the currently bound snapshot.</summary>
         internal void CancelPendingResolve()
@@ -226,6 +236,7 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             }
 
             GoToSourceMenuItem.IsEnabled = _contextMenuRow != null;
+            PeekSourceMenuItem.IsEnabled = _contextMenuRow != null;
         }
 
         private void GoToSourceMenuItem_Click(object sender, RoutedEventArgs e)
@@ -233,6 +244,15 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             ThreadHelper.ThrowIfNotOnUIThread();
             if (_contextMenuRow != null)
                 _viewModel.GoToSource(_contextMenuRow, _contextMenuRowIndex);
+        }
+
+        /// <summary>"Peek source…" — same CanGo gate/row as "Go to source…" above, just shows
+        /// the referenced record in the small floating peek window instead of a new query tab.</summary>
+        private void PeekSourceMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (_contextMenuRow != null)
+                _viewModel.PeekSource(_contextMenuRow, _contextMenuRowIndex);
         }
 
         /// <summary>docs/pivot-plan.md §4 item 14: copies the currently VISIBLE pivot (post

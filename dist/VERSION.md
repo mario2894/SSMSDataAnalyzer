@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.13.3**
+**`SsmsDataAnalyzer.vsix` — version 0.14.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.14.0** — New: **Peek source for this value**, next to Go to source on the results grid's right-click menu (and **Peek source…** in pivot windows). Instead of opening a new query tab, it shows the linked record right away in a small floating window — glance at it, then close it with **X** (or **Esc**). Foreign-key icons inside the peek window work too, so you can follow links further. Go to source is unchanged; pick whichever you need each time.
 
 **0.13.3** — A keyboard shortcut assigned to **Go to source for this value** now works: it uses the grid's current cell (the one you last clicked or moved to with the arrow keys). Previously it looked for a cell under the mouse pointer, so a shortcut did nothing unless the pointer happened to be over the right cell. Go to source always follows one value; when several cells are selected, the status bar says which row it used.
 

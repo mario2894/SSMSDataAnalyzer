@@ -32,6 +32,12 @@ namespace SsmsDataAnalyzer.Vsix
         /// "Allocated IDs" table (lead-assigned, do not change).</summary>
         public const string PivotToolWindowPersistenceGuidString = "1de89e5c-9c40-455e-9ad7-3441a767b7f9";
         public static readonly Guid PivotToolWindowPersistenceGuid = new Guid(PivotToolWindowPersistenceGuidString);
+
+        /// <summary>"Peek source for this value" — PeekToolWindow's persistence GUID. A
+        /// single, floating, transient instance (id 0), re-targeted per peek, the same shape
+        /// as GridFindToolWindow.</summary>
+        public const string PeekToolWindowPersistenceGuidString = "7c2e9a4f-3d5b-4e8a-9f1c-6b0d2e4f8a37";
+        public static readonly Guid PeekToolWindowPersistenceGuid = new Guid(PeekToolWindowPersistenceGuidString);
     }
 
     /// <summary>Numeric command/menu/group IDs used inside VSCommandTable.vsct.</summary>
@@ -47,6 +53,13 @@ namespace SsmsDataAnalyzer.Vsix
         /// external GUID_SQLEditorGroup:IDM_SQLWB_SQLRESGRID_CONTEXT = {33F13AC3-80BB-4ECB-85BC-225435603A5E}:0x0070.</summary>
         public const int ResultsGridMenuGroup = 0x1040;
         public const int GoToSourceForValueCommandId = 0x0200;
+
+        /// <summary>"Peek source for this value" — shows the referenced record in a small,
+        /// immediately-closable floating tool window instead of opening a new query tab.
+        /// Second choice alongside GoToSourceForValueCommandId; same "offered only when a
+        /// cell was captured" gating (see ResultsGridPeekCommand). Same results-grid menu
+        /// group, right after Go to source.</summary>
+        public const int PeekSourceForValueCommandId = 0x0203;
 
         /// <summary>User request: "Find... on right click in result grid of SSMS." Same
         /// results-grid menu group as GoToSourceForValueCommandId.</summary>

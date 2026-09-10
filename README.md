@@ -24,6 +24,7 @@ side by side, and turning a list of values into a SQL `IN (...)` clause.
 | **Search the analysis** | Click the Analyze Data panel → **Ctrl+F** |
 | **Search query results** | Right-click the results grid → **Find…** |
 | **Jump to a linked record** | Right-click a cell in the results grid → **Go to source for this value** |
+| **Peek at a linked record without leaving your tab** | Right-click a cell in the results grid → **Peek source for this value** |
 | **Compare rows side by side** | Select rows in the results grid → right-click → **Pivot selected rows…** |
 | **Paste a list as `IN (...)`** | In a query window, right-click → **Paste as SQL IN (...)** |
 | **Settings** | **Tools → Options… → SSMS Data Analyzer** |
@@ -163,6 +164,15 @@ A new query tab opens, connected with your current sign-in and **already run**, 
 record. (To review the query before it runs, turn off *Automatically execute the generated
 query* in [Settings](#settings).)
 
+**Just want a quick look, not a new tab?** Right-click the same cell and pick **Peek source for
+this value** instead. It shows the referenced record in a small floating window right away —
+no new query tab, nothing to clean up. Close it with **Esc** or its own **X** the moment you've
+seen what you needed. In a pivot window, the equivalent is **Peek source…** on a linked cell's
+right-click menu. Either way, if the peeked record itself has a linked column, the 🔗 icon
+inside the peek window works too, so you can follow a chain of foreign keys without ever
+opening a query tab. Go to source and Peek source are just two ways to look at the same result
+— picking one never changes what the other does.
+
 **It never guesses.** The option is only offered when the link is certain. It is not offered for:
 
 - columns that aren't a declared foreign key, or that point at several tables,
@@ -214,7 +224,7 @@ selected.
 | **Hide all-NULL columns** | Hides columns that are empty in every row |
 | **Filter** | Narrows columns by name |
 | **Header** | Label each row by a column's value (e.g. `ID = 4522`) instead of `Row 7` |
-| **🔗 and ⧉** | Foreign-key column; click ⧉ in a cell to open the linked record ([Feature 3](#feature-3--jump-to-a-linked-record-go-to-source)). Hover it to see where it goes. Right-click a cell → **Go to source…** does the same. |
+| **🔗 and ⧉** | Foreign-key column; click ⧉ in a cell to open the linked record ([Feature 3](#feature-3--jump-to-a-linked-record-go-to-source)). Hover it to see where it goes. Right-click a cell → **Go to source…** does the same, or **Peek source…** to see it in a small closable window without leaving the pivot. |
 | **Ctrl+C** / **Ctrl+A** | Copy selected cells (pastes into Excel) / select all |
 | **Right-click → Copy as Markdown table** | Copies what's currently shown, for Jira or Confluence |
 
@@ -294,6 +304,7 @@ can add your own:
 | Command | Name in the Keyboard list |
 |---|---|
 | Go to source for this value | `SsmsDataAnalyzer.GoToSourceForValue` — uses the cell selected in the results grid |
+| Peek source for this value | `SsmsDataAnalyzer.PeekSourceForValue` — uses the cell selected in the results grid |
 | Find… (in query results) | `SsmsDataAnalyzer.FindInResults` |
 | Pivot selected rows… | `SsmsDataAnalyzer.PivotRows` |
 | Paste as SQL IN (...) | `SsmsDataAnalyzer.PasteAsSqlIn` |

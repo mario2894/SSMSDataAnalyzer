@@ -83,6 +83,25 @@
       </Button>
 
       <!--
+        Second choice next to "Go to source for this value": shows the referenced record in a
+        small floating tool window right away instead of opening a new query tab, closable
+        immediately (Esc or the window's own X). Same "offered only when a cell was captured"
+        gating as cmdidGoToSourceForValue — see ResultsGridPeekCommand.OnBeforeQueryStatus,
+        copied from ResultsGridSourceCommand's.
+      -->
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPeekSourceForValue" priority="0x0105" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings>
+          <ButtonText>Peek source for this value</ButtonText>
+          <CanonicalName>SsmsDataAnalyzer.PeekSourceForValue</CanonicalName>
+          <LocCanonicalName>SsmsDataAnalyzer.PeekSourceForValue</LocCanonicalName>
+        </Strings>
+      </Button>
+
+      <!--
         User request: "Find... on right click in result grid of SSMS." Same visibility
         pattern as cmdidGoToSourceForValue — ResultsGridFindCommand.OnBeforeQueryStatus shows
         it whenever ANY results grid has focus (no per-cell gating needed; Find has no
@@ -188,6 +207,7 @@
       <IDSymbol name="cmdidGoToSourceForValue" value="0x0200" />
       <IDSymbol name="cmdidGridFind" value="0x0201" />
       <IDSymbol name="cmdidPivotRows" value="0x0202" />
+      <IDSymbol name="cmdidPeekSourceForValue" value="0x0203" />
       <IDSymbol name="QueryEditorMenuGroup" value="0x1050" />
       <IDSymbol name="cmdidPasteAsSqlIn" value="0x0300" />
       <IDSymbol name="cmdidPasteAsNumericSqlIn" value="0x0301" />

@@ -66,6 +66,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             public string StatusMessage;
             public string GeneratedSql;
             public string TargetConnectionString;
+            /// <summary>"[schema].[table]" of the referenced row (== ColumnMeta.ReferencedQualifiedName)
+            /// — added for "Peek source for this value" (a tool-window caption needs it; the
+            /// status-bar StatusMessage text above is unchanged). Null on decline.</summary>
+            public string TargetQualifiedName;
         }
 
         /// <summary>One grid column's outcome in <see cref="ResolveAllColumnsAsync"/>. Holds
@@ -148,7 +152,8 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                     Success = true,
                     StatusMessage = statusMessage,
                     GeneratedSql = sql,
-                    TargetConnectionString = targetConnectionString
+                    TargetConnectionString = targetConnectionString,
+                    TargetQualifiedName = columnMeta.ReferencedQualifiedName
                 };
             }
         }

@@ -4,9 +4,12 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Data;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Threading;
 using SsmsDataAnalyzer.Core.Pivot;
+using SsmsDataAnalyzer.Vsix.Peek;
 
 namespace SsmsDataAnalyzer.Vsix.Pivot
 {
@@ -160,8 +163,15 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
         /// snapshot. Values show immediately; if <paramref name="fkLinks"/> is not null, its
         /// ResolveAsync is started in the background with a token cancelled by the next Load
         /// (or CancelPendingResolve, called on window close). A result that arrives after a
-        /// newer Load has started is ignored.</summary>
-        public void Load(PivotResult result, PivotFkLinks fkLinks)
+        /// newer Load has started is ignored.
+        ///
+        /// <paramref name="bannerOverride"/> — "Peek source for this value" reuses this same
+        /// view/view model, but its banner reads "N row(s) from [schema].[table] where ..."
+        /// rather than the pivot's "Showing X of Y selected rows..." (that count is meaningless
+        /// for a peek: there was no grid selection). Null (the pivot's own callers) keeps the
+        /// existing computed text; the FK-link suffix/decline line still append the same way
+        /// either way.</summary>
+        public void Load(PivotResult result, PivotFkLinks fkLinks, string bannerOverride = null)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -182,7 +192,7 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             }
 
             Truncated = result.Truncated;
-            _baseBannerText = string.Format(
+            _baseBannerText = bannerOverride ?? string.Format(
                 CultureInfo.InvariantCulture,
                 "Showing {0} of {1} selected rows · {2} columns · {3} differ",
                 result.Rows.Count,
@@ -250,6 +260,46 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             if (map == null || row == null) return;
             if (rowIndex < 0 || rowIndex >= row.Values.Length) return;
             map.BeginGo(row.GridOrdinal, row.Values[rowIndex]);
+        }
+
+        /// <summary>"Peek source…" pivot cell context menu item: shows the referenced record
+        /// in the small floating peek window (SsmsDataAnalyzer.Vsix.Peek.PeekRunner/
+        /// PeekToolWindow) instead of opening a new query tab — same CanGo-gated cell as
+        /// <see cref="GoToSource"/>, which stays completely unchanged. Fire-and-forget, same
+        /// shape as PivotFkLinkMap.BeginGo.</summary>
+        internal void PeekSource(PivotRowItem row, int rowIndex)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var map = FkLinkMap;
+            var fkLinks = _fkLinks;
+            if (map == null || fkLinks == null || row == null) return;
+            if (rowIndex < 0 || rowIndex >= row.Values.Length) return;
+
+            int gridOrdinal = row.GridOrdinal;
+            string cellDisplayText = row.Values[rowIndex];
+            string displayName = row.DisplayName;
+
+            fkLinks.JoinableTaskFactory.RunAsync(async () =>
+            {
+                var built = map.TryBuildPeekRequest(gridOrdinal, cellDisplayText, out var declineMessage, out var declineIsLoggable);
+                if (built == null)
+                {
+                    await fkLinks.ShowStatusAsync(declineMessage, declineIsLoggable);
+                    return;
+                }
+
+                var request = new PeekRunner.Request
+                {
+                    Sql = built.Sql,
+                    TargetConnectionString = built.TargetConnectionString,
+                    TargetQualifiedName = built.TargetQualifiedName,
+                    FilterDescription = $"[{displayName}] = {cellDisplayText}",
+                    ChainConnection = fkLinks.Connection
+                };
+
+                var error = await PeekRunner.RunAsync(fkLinks.Package, request, CancellationToken.None).ConfigureAwait(true);
+                await fkLinks.ShowStatusAsync(error != null ? "Peek source: " + error : built.StatusMessage, log: error != null);
+            }).FileAndForget("SsmsDataAnalyzer/Pivot/FkLinks/Peek");
         }
 
         /// <summary>docs/pivot-plan.md §4 item 11: the header text/tooltip for one value

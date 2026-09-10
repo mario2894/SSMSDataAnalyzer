@@ -192,6 +192,10 @@
             <DataGrid.ContextMenu>
                 <ContextMenu Opened="PivotGridContextMenu_Opened">
                     <MenuItem x:Name="GoToSourceMenuItem" Header="Go to source…" Click="GoToSourceMenuItem_Click" IsEnabled="False" />
+                    <!-- "Peek source for this value" (results-grid feature) for a pivoted
+                         cell: same CanGo gate as Go to source…, shows the referenced record in
+                         the small floating peek window instead of a new query tab. -->
+                    <MenuItem x:Name="PeekSourceMenuItem" Header="Peek source…" Click="PeekSourceMenuItem_Click" IsEnabled="False" />
                     <Separator />
                     <!-- docs/pivot-plan.md §4 item 14: copies the CURRENTLY VISIBLE pivot
                          (respecting Show only differing / Hide all-NULL / Filter) with the
