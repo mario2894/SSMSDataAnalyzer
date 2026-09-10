@@ -1,7 +1,17 @@
 # Pivot selected rows — development plan
 
-Status: **planned, not started.** Open decisions are in section 9; spike items in section 7
-must be answered before Phase 1 code is written.
+Status: **Phase 1 + 2 shipped and confirmed live (v0.11.0 / v0.11.1).** Phase 3 **item 13 (FK
+link icons) in progress** (user go-ahead 2026-09-10; items 11, 12, 14 not requested).
+Decisions D1–D3 were built as recommended; D4 is resolved: FK icons are done as Phase 3,
+after Phases 1 and 2 shipped. Team: R1 (Opus) → U2 (Sonnet), interface in §12 (written by
+R1, reviewed by the lead before U2 starts).
+
+Live findings that override the spike (§7) — see docs/resultsgrid-api.md "LIVE CORRECTION":
+- A right-click outside the selection does **not** move SSMS's selection. The command
+  captures the right-clicked row in BeforeQueryStatus: a row outside the selection → pivot
+  just that row.
+- Ctrl+click on row numbers replaces the selection (native SSMS). Ctrl+click on **cells**
+  adds to it, which is the documented way to pick rows far apart.
 
 ## 1. What it does
 

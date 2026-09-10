@@ -24,6 +24,7 @@ list of values into a SQL `IN (...)` clause.
 | **Search query results** — SSMS has no built-in find for these | Right-click the results grid → **Find…** |
 | **Jump to a linked record** | Right-click a cell or a column → **Go to source…** |
 | **Paste a list as `IN (...)`** | In a query window, right-click → **Paste as SQL IN (...)** |
+| **Compare rows side by side** | Select rows in the results grid → right-click → **Pivot selected rows…** (also under **Tools**) |
 | **Settings** | **Tools → Options… → SSMS Data Analyzer** |
 | **Your own keyboard shortcuts** | **Tools → Options… → Environment → Keyboard** |
 
@@ -217,6 +218,31 @@ It handles the awkward bits for you:
 
 ---
 
+## Feature 6 — Pivot selected rows
+
+**Where:** results grid → select multiple rows → **right-click** → **Pivot selected rows…** (or **Tools** menu)
+
+Turns selected rows sideways for easy comparison — column names appear down the left side, with one column per row. Useful for wide tables and for seeing how values differ between rows.
+
+**Selecting rows:**
+- Click a row number; Shift+click another to select a range
+- For rows far apart, Ctrl+click any cell in each row (note: Ctrl+click on row numbers doesn't add rows — that's SSMS's own behavior)
+- One cell per row is enough; all columns of those rows are shown
+- Right-click a row **inside** your selection to pivot the whole selection; right-click a row **outside** it to pivot just that row
+
+**In the pivot window:**
+- Columns with differing values are highlighted
+- Checkboxes let you **Show only differing columns** and **Hide all-NULL columns**
+- **Filter** box narrows columns by name
+- **Ctrl+C** copies selected cells (paste into Excel)
+- **Ctrl+A** selects all
+
+**Limit:** By default, at most 100 rows can be pivoted. If more are selected, a highlighted banner shows "Showing 100 of N selected rows". Change the limit in **Tools → Options → SSMS Data Analyzer**, under **Pivot** (range 1–500).
+
+**Note:** Values are a snapshot when the window opens — re-running the query won't update them; pivot again to refresh. Values are what the grid displays, so very long text is cut off the same way, and a NULL database value looks the same as the text 'NULL'. The tool never queries the database.
+
+---
+
 ## Keyboard shortcuts
 
 The extension ships with **no** default shortcuts, so it can't steal a key you already use.
@@ -233,6 +259,7 @@ The commands are named:
 | Paste as SQL IN (...) | `SsmsDataAnalyzer.PasteAsSqlIn` |
 | Paste as numeric SQL IN (...) | `SsmsDataAnalyzer.PasteAsNumericSqlIn` |
 | Find in Results | `SsmsDataAnalyzer.FindInResults` |
+| Pivot selected rows | `SsmsDataAnalyzer.PivotRows` |
 
 Set *Use new shortcut in* to **Text Editor** if you only want it inside query windows, or
 leave it on **Global**. The extension deliberately ships with **no** default shortcuts — a
@@ -251,6 +278,7 @@ default would risk taking a key you already use for something else.
 | **Large Table Threshold** | Above this row count, you get a confirmation prompt before a long analysis starts | 10,000,000 |
 | **Distinct Batch Size** | Advanced — how many columns are counted per query | 8 |
 | **Max Grant Percent** | Advanced — caps how much server memory an analysis may use, so it can't slow down other people | 25 |
+| **Pivot row limit** | Maximum rows to show when pivoting (1–500; applies to the next pivot you open) | 100 |
 
 Changes apply to the next analysis. No restart needed.
 
