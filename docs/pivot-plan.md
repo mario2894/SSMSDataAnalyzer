@@ -1,7 +1,7 @@
 # Pivot selected rows — development plan
 
 Status: **Phase 1 + 2 shipped and confirmed live (v0.11.0 / v0.11.1).** Phase 3 **item 13 (FK
-link icons) shipped in v0.12.0, awaiting live check** (user go-ahead 2026-09-10; items 11,
+link icons) shipped in v0.12.0/0.12.1 and confirmed live** (user go-ahead 2026-09-10; items 11,
 12, 14 not requested). U2 hit a usage limit before building; the lead finished it (fixed a
 non-existent theme brush key and added UI-thread guards).
 Decisions D1–D3 were built as recommended; D4 is resolved: FK icons are done as Phase 3,
