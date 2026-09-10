@@ -35,6 +35,30 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
     {
         private AsyncPackage _package;
 
+        /// <summary>
+        /// The row the context menu was opened on, captured in BeforeQueryStatus (Execute is too
+        /// late — by then the mouse is over the menu item; same reasoning as
+        /// ResultsGridSourceCommand's cached cell).
+        ///
+        /// Why it's needed at all (v0.11.1 field report): spike S1 predicted from IL that a
+        /// right-click outside the selection collapses it to the clicked cell. Live SSMS does NOT
+        /// — the old selection survives, so v0.11.0 pivoted rows the user had right-clicked away
+        /// from. Rule now: right-click on a row that is inside the selection → pivot the
+        /// selection; on a row outside it → pivot just that row.
+        /// </summary>
+        private sealed class RightClickedRow
+        {
+            public WeakReference Grid;
+            public long Row;
+            public DateTime AtUtc;
+        }
+
+        private RightClickedRow _rightClickedRow;
+
+        // A context menu is used within seconds; anything older is not "the click that opened
+        // this menu" and must not override the selection.
+        private static readonly TimeSpan RightClickFreshness = TimeSpan.FromMinutes(1);
+
         public static PivotRowsCommand Instance { get; private set; }
 
         public static async Task InitializeAsync(AsyncPackage package)
@@ -55,7 +79,60 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
             _package = package;
             var commandId = new CommandID(PackageGuids.CommandSetGuid, PackageIds.PivotRowsCommandId);
             var command = new OleMenuCommand(Execute, commandId);
+            command.BeforeQueryStatus += OnBeforeQueryStatus;
             commandService.AddCommand(command);
+        }
+
+        /// <summary>SHELL. Always visible and enabled (see class doc comment) — this handler
+        /// only records where the menu was opened.</summary>
+        private void OnBeforeQueryStatus(object sender, EventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (sender is OleMenuCommand command)
+            {
+                command.Visible = true;
+                command.Enabled = true;
+            }
+
+            _rightClickedRow = null;
+            if (!ResultsGridCapability.IsSupported) return;
+
+            try
+            {
+                CaptureRightClickedRowCore();
+            }
+            catch (Exception ex)
+            {
+                if (ResultsGridCapability.DescribeIfCompatibilityException(ex, "Pivot selected rows") == null)
+                    OeDiagnostics.Error("'Pivot selected rows' BeforeQueryStatus failed", ex);
+                _rightClickedRow = null;
+            }
+        }
+
+        /// <summary>CORE — only entered when ResultsGridCapability.IsSupported.</summary>
+        private void CaptureRightClickedRowCore()
+        {
+            // Keyboard invocation (an assigned shortcut, Shift+F10): QueryStatus then runs with
+            // the mouse wherever it happens to rest, which is not a click location. Pivot the
+            // selection in that case.
+            if (System.Windows.Forms.Control.ModifierKeys != System.Windows.Forms.Keys.None) return;
+
+            var grid = GridClickCapture.TryGetFocusedGrid();
+            if (grid == null) return;
+
+            // Tools menu opened with the mouse: the pointer is on the menu bar, outside the grid.
+            var p = grid.PointToClient(System.Windows.Forms.Control.MousePosition);
+            if (!grid.ClientRectangle.Contains(p)) return;
+
+            var hit = grid.HitTest(p.X, p.Y);
+            if (hit == null || hit.RowIndex < 0) return; // header row, or below the last row
+
+            _rightClickedRow = new RightClickedRow
+            {
+                Grid = new WeakReference(grid),
+                Row = hit.RowIndex,
+                AtUtc = DateTime.UtcNow
+            };
         }
 
         /// <summary>SHELL — no reference to GridControl or any other results-grid type; see
@@ -120,7 +197,16 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                 return;
             }
 
+            // Consume the capture: it describes the menu that is invoking us now, never a later one.
+            var click = _rightClickedRow;
+            _rightClickedRow = null;
+            bool haveClick = click != null
+                && ReferenceEquals(click.Grid.Target, grid)
+                && DateTime.UtcNow - click.AtUtc < RightClickFreshness
+                && click.Row < storage.NumRows();
+
             var ranges = new List<RowRange>();
+            bool clickInsideSelection = false;
             var selectedCells = grid.SelectedCells;
             if (selectedCells != null)
             {
@@ -130,7 +216,19 @@ namespace SsmsDataAnalyzer.Vsix.Pivot
                     // docs/resultsgrid-api.md "Pivot selection" section) — never a real range.
                     if (block == null || block.IsEmpty) continue;
                     ranges.Add(new RowRange(block.Y, block.Bottom));
+
+                    // Containment by ROW only, not cell: the pivot works on rows, so
+                    // right-clicking any cell of a selected row (e.g. after Ctrl+clicking one
+                    // cell per row) must keep the whole multi-row selection.
+                    if (haveClick && click.Row >= block.Y && click.Row <= block.Bottom)
+                        clickInsideSelection = true;
                 }
+            }
+
+            if (haveClick && !clickInsideSelection)
+            {
+                ranges.Clear();
+                ranges.Add(new RowRange(click.Row, click.Row));
             }
 
             if (ranges.Count == 0)

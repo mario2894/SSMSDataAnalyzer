@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.11.0**
+**`SsmsDataAnalyzer.vsix` — version 0.11.1**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.11.1** — Pivot: right-clicking a row that is **not** part of your selection now pivots just that row. Previously it pivoted the old selection, because SSMS keeps the selection when you right-click elsewhere. Right-clicking inside the selection still pivots all selected rows.
 
 **0.11.0** — New: **Pivot selected rows…** on the results grid's right-click menu (also under Tools). Turns the selected rows sideways — column names down the left, one column per row — so wide rows can be read and compared. Columns whose values differ between the rows are highlighted; toggles show only differing columns or hide all-NULL ones, and a filter box narrows columns by name. Ctrl+C copies selected cells for Excel. Shows at most 100 rows (change it in Options → Pivot); anything beyond that is named in the banner. The values are a snapshot taken when you open it.
 

@@ -803,6 +803,13 @@ two "manual check" recipes at the end are for the user to confirm live.
 
 > **Answer: outside the current selection → YES, changes it. Inside the current selection → NO,
 > preserved. Confidence: HIGH** (both branches read directly from decoded IL, not inferred).
+>
+> **LIVE CORRECTION (v0.11.0 field test, SSMS 22):** the "outside → changes it" half is WRONG
+> in practice. A right-click outside the selection leaves the old selection intact (the IL path
+> below is evidently not what a right-click reaches). Also confirmed live: Ctrl+click on the
+> row-number gutter does NOT add rows — it replaces the selection, consistent with
+> `SelectBlockOfCellsAsRowSelection` always passing a single block. PivotRowsCommand now
+> captures the right-clicked row in BeforeQueryStatus and decides itself (v0.11.1).
 
 Evidence chain, all in `Microsoft.SqlServer.GridControl.dll`:
 
