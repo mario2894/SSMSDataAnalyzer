@@ -139,6 +139,7 @@ A **Find in Results** panel opens:
 1. Type what you're looking for.
 2. Press **Enter** or click **Find**.
 3. **Enter** / **F3** for the next match, **Shift+Enter** / **Shift+F3** for the previous.
+4. **Esc** closes the panel and clears the highlights.
 
 It searches **every row**, not just the ones on screen, and jumps to each match in turn.
 

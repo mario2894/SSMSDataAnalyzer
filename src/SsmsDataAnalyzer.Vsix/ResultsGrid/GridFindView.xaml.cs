@@ -82,6 +82,28 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         }
 
         /// <summary>
+        /// v0.14.2: the Find window is being closed (Esc or its X). Stop any running search,
+        /// unhook from the grid and clear + repaint its highlights, so no match colouring is
+        /// left behind on a grid whose Find panel is gone.
+        /// </summary>
+        public void Detach()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _searchCts?.Cancel();
+            if (_state == null) return;
+
+            _state.Grid.Disposed -= Grid_Disposed;
+            _state.Grid.CustomizeCellGDIObjects -= Grid_CustomizeCellGDIObjects;
+            if (!_state.Grid.IsDisposed)
+            {
+                _state.Clear();
+                _state.Grid.Invalidate();
+            }
+            _state = null;
+            ShowNoGridBound();
+        }
+
+        /// <summary>
         /// The grid this find UI was bound to went away (its tab closed, or SSMS disposed
         /// it). Per the lead's ruling this is a PERSISTENT tool window, not a floating popup
         /// that closes itself -- so rather than closing the pane, this clears state and

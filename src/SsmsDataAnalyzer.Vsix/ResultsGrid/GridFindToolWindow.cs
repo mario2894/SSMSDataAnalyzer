@@ -90,7 +90,34 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
                 commandService.AddCommand(new MenuCommand(
                     (s, e) => _view.FindPreviousCommand(),
                     new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.FindPrev)));
+
+                // v0.14.2: Esc closes Find in Results, same mechanism as PeekToolWindow. VS binds
+                // Esc in tool windows to Window.ActivateDocumentWindow (VSStd97
+                // PaneActivateDocWindow) and routes it before WPF sees the key; claiming it (and
+                // the generic Escape) on this pane's own command service scopes it to this window.
+                commandService.AddCommand(new MenuCommand(
+                    (s, e) => { ThreadHelper.ThrowIfNotOnUIThread(); CloseWindow(); },
+                    new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.PaneActivateDocWindow)));
+                commandService.AddCommand(new MenuCommand(
+                    (s, e) => { ThreadHelper.ThrowIfNotOnUIThread(); CloseWindow(); },
+                    new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.Escape)));
             }
+        }
+
+        private void CloseWindow()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (Frame is Microsoft.VisualStudio.Shell.Interop.IVsWindowFrame frame)
+                frame.CloseFrame((uint)Microsoft.VisualStudio.Shell.Interop.__FRAMECLOSE.FRAMECLOSE_NoSave);
+        }
+
+        /// <summary>Closing the window (Esc or X) clears the match highlights on the grid —
+        /// see GridFindView.Detach.</summary>
+        protected override void OnClose()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _view.Detach();
+            base.OnClose();
         }
 
         /// <summary>The single authoritative way to (re)target this window at a specific

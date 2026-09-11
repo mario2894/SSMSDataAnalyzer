@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.14.1**
+**`SsmsDataAnalyzer.vsix` — version 0.14.2**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.14.2** — **Esc** now closes the **Find in Results** window too. Closing it (Esc or X) also clears the yellow match highlights from the results grid.
 
 **0.14.1** — **Esc** now closes the Peek window. Before, SSMS used Esc to jump back to the query and the window stayed open.
 
