@@ -50,17 +50,36 @@ namespace SsmsDataAnalyzer.Vsix.Peek
                 commandService.AddCommand(new MenuCommand(
                     (s, e) => _view.SelectAllCommand(),
                     new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.SelectAll)));
+
+                // v0.14.1 field report: Esc only returned focus to SSMS. In a tool window VS
+                // binds Esc to Window.ActivateDocumentWindow (VSStd97 PaneActivateDocWindow,
+                // 289) and runs it before WPF ever sees the key — the same mechanism that
+                // swallowed F3 in Find in Results. Claiming it (and the generic Escape, 743) on
+                // this pane's own command service scopes the override to the peek window only.
+                commandService.AddCommand(new MenuCommand(
+                    (s, e) => CloseWindow(),
+                    new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.PaneActivateDocWindow)));
+                commandService.AddCommand(new MenuCommand(
+                    (s, e) => CloseWindow(),
+                    new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.Escape)));
             }
         }
 
         /// <summary>Esc closes the peek window immediately — the point of "closable in a few
-        /// seconds" (the window's own titlebar X always works regardless of this handler).
-        /// Only Key.Escape is handled; every other key routes to the view normally.</summary>
+        /// seconds" (the window's own titlebar X always works regardless). Kept as a fallback
+        /// for the case the key does reach WPF; the pane-local commands above are what VS
+        /// actually routes Esc to.</summary>
         private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             if (e.Key != Key.Escape) return;
             e.Handled = true;
+            CloseWindow();
+        }
+
+        private void CloseWindow()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (Frame is IVsWindowFrame frame)
                 frame.CloseFrame((uint)__FRAMECLOSE.FRAMECLOSE_NoSave);
         }
