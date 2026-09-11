@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.15.0**
+**`SsmsDataAnalyzer.vsix` — version 0.15.1**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.15.1** — Settings: the "Enable right-click Analyze Data" option is no longer labelled "(experimental)".
 
 **0.15.0** — New: **Aggregate selection…** on the results grid's right-click menu (also under Tools). Select cells and get **Count, Distinct, Sum, Average, Min, Max** in a small popup, formatted with your Windows regional settings (thousands separators included). NULLs are left out like in SQL; if some values aren't numbers, Sum/Average show "—" and say how many. Ctrl+C copies the results; **Esc** closes it.
 

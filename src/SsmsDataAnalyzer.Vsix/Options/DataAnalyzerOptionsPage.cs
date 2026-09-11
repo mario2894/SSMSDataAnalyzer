@@ -29,7 +29,7 @@ namespace SsmsDataAnalyzer.Vsix.Options
         public int PivotRowLimit { get; set; } = PivotBuilder.DefaultRowLimit;
 
         [Category("Object Explorer integration")]
-        [DisplayName("Enable right-click Analyze Data (experimental)")]
+        [DisplayName("Enable right-click Analyze Data")]
         [Description("Adds 'Analyze Data...' to the right-click menu of table nodes in Object Explorer, wired to that node's own connection (CONTRACT.md Amendment 13). Uses unsupported, undocumented SSMS API (see docs/oe-api.md) behind a try/catch that falls back to the Tools menu entry point if unavailable. Turn off if a future SSMS update breaks it.")]
         [DefaultValue(true)]
         public bool EnableObjectExplorerIntegration { get; set; } = true;
