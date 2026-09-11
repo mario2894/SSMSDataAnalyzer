@@ -66,7 +66,7 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// already fully functional and unaffected by this change either way.
     /// </summary>
     [Guid(PackageGuids.GridFindToolWindowPersistenceGuidString)]
-    public sealed class GridFindToolWindow : ToolWindowPane
+    public sealed class GridFindToolWindow : ToolWindowPane, Microsoft.VisualStudio.Shell.Interop.IVsWindowFrameNotify3
     {
         private readonly GridFindView _view;
 
@@ -107,12 +107,46 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
         private void CloseWindow()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            // Clear first: closing a VS tool window only HIDES it (v0.14.3 field report — in
+            // v0.14.2 the highlights stayed because the pane's OnClose never runs for a hide).
+            _view.Detach();
             if (Frame is Microsoft.VisualStudio.Shell.Interop.IVsWindowFrame frame)
                 frame.CloseFrame((uint)Microsoft.VisualStudio.Shell.Interop.__FRAMECLOSE.FRAMECLOSE_NoSave);
         }
 
-        /// <summary>Closing the window (Esc or X) clears the match highlights on the grid —
-        /// see GridFindView.Detach.</summary>
+        /// <summary>Registers this pane for its frame's show/close notifications, so the X
+        /// button clears the grid's match highlights too (see OnShow).</summary>
+        public override void OnToolWindowCreated()
+        {
+            base.OnToolWindowCreated();
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (Frame is Microsoft.VisualStudio.Shell.Interop.IVsWindowFrame frame)
+                frame.SetProperty((int)Microsoft.VisualStudio.Shell.Interop.__VSFPROPID.VSFPROPID_ViewHelper, this);
+        }
+
+        /// <summary>Closing the window clears the match highlights on the grid. Only on a real
+        /// close — FRAMESHOW_WinHidden also fires when a docked tab is merely switched away
+        /// from, and the user would expect their matches to still be there when they come back.</summary>
+        int Microsoft.VisualStudio.Shell.Interop.IVsWindowFrameNotify3.OnShow(int fShow)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (fShow == (int)Microsoft.VisualStudio.Shell.Interop.__FRAMESHOW.FRAMESHOW_WinClosed)
+                _view.Detach();
+            return VSConstants.S_OK;
+        }
+
+        int Microsoft.VisualStudio.Shell.Interop.IVsWindowFrameNotify3.OnMove(int x, int y, int w, int h) => VSConstants.S_OK;
+        int Microsoft.VisualStudio.Shell.Interop.IVsWindowFrameNotify3.OnSize(int x, int y, int w, int h) => VSConstants.S_OK;
+        int Microsoft.VisualStudio.Shell.Interop.IVsWindowFrameNotify3.OnDockableChange(int fDockable, int x, int y, int w, int h) => VSConstants.S_OK;
+
+        int Microsoft.VisualStudio.Shell.Interop.IVsWindowFrameNotify3.OnClose(ref uint pgrfSaveOptions)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            _view.Detach();
+            return VSConstants.S_OK;
+        }
+
+        /// <summary>Pane actually destroyed (SSMS shutting down): same cleanup.</summary>
         protected override void OnClose()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
