@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.15.1**
+**`SsmsDataAnalyzer.vsix` — version 0.15.2**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.15.2** — Aggregate selection looks cleaner: thin lines between rows, values right-aligned and emphasised so numbers line up, labels in lighter text, and "—" (not available) greyed out.
 
 **0.15.1** — Settings: the "Enable right-click Analyze Data" option is no longer labelled "(experimental)".
 

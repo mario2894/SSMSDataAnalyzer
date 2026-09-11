@@ -80,7 +80,7 @@ namespace SsmsDataAnalyzer.Vsix
     // cells. Same "glance at it, close it" shape as PeekToolWindow just above: floating, fixed
     // starting size, Transient = true, MultiInstances stays at its default (0) since
     // AggregateSelectionCommand always shows/reuses id 0.
-    [ProvideToolWindow(typeof(ResultsGrid.AggregateSelectionToolWindow), Style = VsDockStyle.Float, Width = 360, Height = 260, Transient = true)]
+    [ProvideToolWindow(typeof(ResultsGrid.AggregateSelectionToolWindow), Style = VsDockStyle.Float, Width = 360, Height = 310, Transient = true)]
     [ProvideOptionPage(typeof(DataAnalyzerOptionsPage), "SSMS Data Analyzer", "General", 0, 0, true)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]

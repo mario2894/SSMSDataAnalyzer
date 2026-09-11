@@ -13,56 +13,82 @@
              Pivot/PivotView.xaml — only EXISTING EnvironmentColors keys. -->
         <SolidColorBrush x:Key="ContextTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemGrayTextColorKey}}" />
         <SolidColorBrush x:Key="RowHoverBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemHighlightColorKey}}" Opacity="0.15" />
-        <SolidColorBrush x:Key="LabelTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemWindowTextColorKey}}" />
+        <SolidColorBrush x:Key="ValueTextBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemWindowTextColorKey}}" />
+        <!-- v0.15.2 field feedback ("some lines between"): hairline dividers at low opacity, the
+             usual key/value-table treatment — they separate rows without competing with the
+             numbers. Same gray as the pivot's grid lines. -->
+        <SolidColorBrush x:Key="DividerBrush" Color="{DynamicResource {x:Static vsp:EnvironmentColors.SystemGrayTextColorKey}}" Opacity="0.30" />
     </UserControl.Resources>
 
-    <StackPanel Margin="12">
-        <!-- One row per statistic. Each row is individually copyable: double-click, or
-             right-click → Copy value. Ctrl+C (wired in AggregateSelectionToolWindow, the same
-             pane-local VSStd97 Copy shape as Peek/PivotToolWindow) copies ALL rows at once as
-             "Label\tValue" lines via AggregateSelectionView.CopyCommand(). -->
-        <ItemsControl x:Name="RowsList" ItemsSource="{Binding Rows}" Focusable="False">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border Padding="4,3" Cursor="Hand"
-                            MouseLeftButtonDown="Row_MouseLeftButtonDown"
-                            ToolTip="Double-click, or right-click → Copy value">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Background" Value="Transparent" />
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource RowHoverBrush}" />
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <Border.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Copy value" Click="CopyValueMenuItem_Click" />
-                            </ContextMenu>
-                        </Border.ContextMenu>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="100" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{Binding Label, Mode=OneWay}"
-                                       FontWeight="SemiBold" Foreground="{StaticResource LabelTextBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Value, Mode=OneWay}"
-                                       Foreground="{StaticResource LabelTextBrush}"
-                                       TextTrimming="CharacterEllipsis" />
-                        </Grid>
-                    </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+    <StackPanel Margin="12,10,12,12">
+        <!-- One row per statistic. Labels are secondary (gray, regular) and values primary
+             (semi-bold, right-aligned, tabular figures) so the numbers are what the eye lands
+             on and line up on their last digit. Each row is individually copyable:
+             double-click, or right-click → Copy value. Ctrl+C (wired in
+             AggregateSelectionToolWindow, pane-local VSStd97 Copy like Peek/Pivot) copies ALL
+             rows as "Label\tValue" lines via AggregateSelectionView.CopyCommand(). -->
+        <Border BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0">
+            <ItemsControl x:Name="RowsList" ItemsSource="{Binding Rows}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Padding="8,6" Cursor="Hand" MinHeight="30"
+                                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,1"
+                                MouseLeftButtonDown="Row_MouseLeftButtonDown"
+                                ToolTip="Double-click, or right-click → Copy value">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource RowHoverBrush}" />
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy value" Click="CopyValueMenuItem_Click" />
+                                </ContextMenu>
+                            </Border.ContextMenu>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" MinWidth="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Label, Mode=OneWay}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource ContextTextBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding Value, Mode=OneWay}"
+                                           VerticalAlignment="Center" TextAlignment="Right"
+                                           Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
+                                           Typography.NumeralAlignment="Tabular">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Foreground" Value="{StaticResource ValueTextBrush}" />
+                                            <Style.Triggers>
+                                                <!-- "—" = not available for this selection (e.g. text in a SUM):
+                                                     muted so it never reads like a real result. -->
+                                                <DataTrigger Binding="{Binding Value}" Value="—">
+                                                    <Setter Property="FontWeight" Value="Normal" />
+                                                    <Setter Property="Foreground" Value="{StaticResource ContextTextBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
 
         <!-- Small gray context line ("N cells selected · M NULL · K not numeric") — only
              shown when there is something extra worth saying (see
              AggregateSelectionViewModel.HasContextLine / SelectionAggregator.ContextLine). -->
         <TextBlock Text="{Binding ContextLine, Mode=OneWay}" Foreground="{StaticResource ContextTextBrush}"
-                   Margin="4,8,0,0" TextWrapping="Wrap" FontSize="11">
+                   Margin="8,10,8,0" TextWrapping="Wrap" FontSize="11">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Setter Property="Visibility" Value="Visible" />
