@@ -261,7 +261,7 @@ Each pivot opens in **its own tab** (Pivot 1, Pivot 2, …), so you can keep sev
 ## Feature 5 — Aggregate a selection
 
 Select some cells in the results grid and get their COUNT, DISTINCT, SUM, AVERAGE, MIN and MAX
-at a glance — the same idea as Redgate SQL Prompt's status-bar aggregates, in a small popup.
+at a glance in a small popup.
 
 **Where:** select cells in the results grid → **right-click** → **Aggregate selection…**
 (also under the **Tools** menu)
