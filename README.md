@@ -13,8 +13,9 @@ Useful if you need to answer questions like:
 - *This ID points at another table — what's the actual record behind it?*
 - *These two rows look the same — what's actually different between them?*
 
-It also adds a few things SSMS itself doesn't have: searching query results, comparing rows
-side by side, and turning a list of values into a SQL `IN (...)` clause.
+It also adds a few things SSMS itself doesn't have: searching query results, peeking at a linked
+record, comparing rows side by side, adding up a selection, and turning a list of values into a
+SQL `IN (...)` clause.
 
 ## Everything it adds, at a glance
 
@@ -185,8 +186,20 @@ opening a query tab. Go to source and Peek source are just two ways to look at t
 
 In those cases the status bar at the bottom of SSMS says why.
 
-Works with queries that use `USE`, `GO`, joins, aliases and several result grids. Only the
-declared table structure is read to find the link — never your data.
+Works with queries that use `USE`, `GO`, joins, aliases and several result grids. Finding the
+link reads only the declared table structure; Go to source and Peek then select just the linked
+record.
+
+**Good to know:**
+
+- **It uses the query as it was run.** After running a query you can keep typing, pasting or
+  highlighting other text in the window — Go to source and Peek still follow the query that
+  produced the grid.
+- **With a keyboard shortcut** it uses the grid's current cell (the one you last clicked or
+  moved to with the arrow keys). If several cells are selected, the status bar says which row's
+  value it used.
+- **Several statements run together** (nothing highlighted, many `SELECT`s): only the first
+  grid can be matched. Highlight the statement you want and run just that.
 
 ---
 
@@ -248,8 +261,7 @@ Each pivot opens in **its own tab** (Pivot 1, Pivot 2, …), so you can keep sev
 ## Feature 5 — Aggregate a selection
 
 Select some cells in the results grid and get their COUNT, DISTINCT, SUM, AVERAGE, MIN and MAX
-at a glance — the same idea as Redgate SQL Prompt's status-bar aggregates, but in a small
-popup you can leave open while you keep working.
+at a glance — the same idea as Redgate SQL Prompt's status-bar aggregates, in a small popup.
 
 **Where:** select cells in the results grid → **right-click** → **Aggregate selection…**
 (also under the **Tools** menu)
@@ -276,6 +288,8 @@ Max        127
   you picked instead of computing anything.
 - **Copy what you need:** Ctrl+C copies every row (pastes into Excel as two columns);
   double-click a row, or right-click it → **Copy value**, to copy just that one number.
+- **It's a snapshot** of the cells selected when you opened it. Select other cells and run it
+  again to update.
 - **Esc** closes the popup, same as Peek and Find.
 
 ---
@@ -360,7 +374,7 @@ restart needed.
 | Setting | What it does | Default |
 |---|---|---|
 | **Automatically execute the generated query** | Whether "Go to source" runs the query for you, or opens it for you to review first | On |
-| **Pivot row limit** | Most rows one pivot shows (1–500) | 100 |
+| **Pivot row limit** | Most rows one pivot (or Peek window) shows (1–500) | 100 |
 | **Query timeout (seconds)** | How long Analyze Data waits before giving up on a slow table — raise it if a big table times out | 120 |
 | **Large table threshold (rows)** | Above this size, Analyze Data warns you before starting a long analysis | 10,000,000 |
 | **DateCreated candidate columns** | Fallback column names used for **Last Fill** when a table has no `DateCreated` | `CreatedDate, CreatedOn, …` |
@@ -376,10 +390,10 @@ It only ever **reads**. It never writes, updates or deletes anything.
 - **Analyze Data** stays out of other users' way: it reads without blocking anyone else's work,
   caps how much server memory it can take, gives up rather than running forever, and warns you
   before starting on a very large table. **Cancel** at any point keeps what it has so far.
-- **Go to source** and pivot links only read the table structure to find the link; the query
-  they open selects the one linked record (or at most 1,000 rows for **Go to source table**).
-- **Find**, **Pivot** and **Paste as SQL IN** work on what's already on your screen or clipboard —
-  they don't query the database at all.
+- **Go to source**, **Peek** and pivot links only read the table structure to find the link; the
+  query they run selects just the linked record (or at most 1,000 rows for **Go to source table**).
+- **Find**, **Pivot**, **Aggregate selection** and **Paste as SQL IN** work on what's already on
+  your screen or clipboard — they don't query the database at all.
 - Your password is never stored or written anywhere, and cell values are never written to SSMS's
   log files.
 
@@ -397,6 +411,8 @@ It only ever **reads**. It never writes, updates or deletes anything.
 - **"Go to source" isn't offered, or nothing happens** — look at the status bar at the bottom of
   SSMS; it says why (see [Feature 3](#feature-3--jump-to-a-linked-record-go-to-source) for the
   cases it deliberately refuses). Sign-ins with Microsoft Entra aren't supported for this yet.
+  If you ran the query right after starting SSMS, run it once more — the extension may not have
+  finished loading yet.
 - **A pivot shows fewer rows than you selected** — you hit the pivot row limit; the banner says
   so. Raise it in [Settings](#settings).
 
@@ -408,10 +424,10 @@ It only ever **reads**. It never writes, updates or deletes anything.
 ### Repository layout
 
 ```
-src/SsmsDataAnalyzer.Core/   netstandard2.0 — profiling engine, pivot and result-shape logic, zero VS dependencies
+src/SsmsDataAnalyzer.Core/   netstandard2.0 — profiling engine, pivot, aggregate and result-shape logic, zero VS dependencies
 src/SsmsDataAnalyzer.Cli/    net8.0 — same engine, scriptable from a terminal
 src/SsmsDataAnalyzer.Vsix/   net472 — the SSMS 22 extension
-tests/                       xUnit — 132 tests, unit + integration
+tests/                       xUnit — 161 tests, unit + integration
 tools/seed/                  seeded test database + verified ground truth
 docs/                        reverse-engineering notes on SSMS's internals, feature plans (pivot-plan.md)
 spikes/OeProbe/              metadata/IL inspector used to produce those notes
