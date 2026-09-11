@@ -57,10 +57,10 @@ namespace SsmsDataAnalyzer.Vsix.Peek
                 // swallowed F3 in Find in Results. Claiming it (and the generic Escape, 743) on
                 // this pane's own command service scopes the override to the peek window only.
                 commandService.AddCommand(new MenuCommand(
-                    (s, e) => CloseWindow(),
+                    (s, e) => { ThreadHelper.ThrowIfNotOnUIThread(); CloseWindow(); },
                     new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.PaneActivateDocWindow)));
                 commandService.AddCommand(new MenuCommand(
-                    (s, e) => CloseWindow(),
+                    (s, e) => { ThreadHelper.ThrowIfNotOnUIThread(); CloseWindow(); },
                     new CommandID(VSConstants.GUID_VSStandardCommandSet97, (int)VSConstants.VSStd97CmdID.Escape)));
             }
         }
