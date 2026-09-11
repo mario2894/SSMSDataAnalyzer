@@ -76,6 +76,11 @@ namespace SsmsDataAnalyzer.Vsix
     // ProfileToolWindow) match "glance at it, close it" rather than a panel the user navigates
     // back to.
     [ProvideToolWindow(typeof(Peek.PeekToolWindow), Style = VsDockStyle.Float, Width = 520, Height = 420, Transient = true)]
+    // "Aggregate selection…" — COUNT/DISTINCT/SUM/AVERAGE/MIN/MAX of the selected results-grid
+    // cells. Same "glance at it, close it" shape as PeekToolWindow just above: floating, fixed
+    // starting size, Transient = true, MultiInstances stays at its default (0) since
+    // AggregateSelectionCommand always shows/reuses id 0.
+    [ProvideToolWindow(typeof(ResultsGrid.AggregateSelectionToolWindow), Style = VsDockStyle.Float, Width = 360, Height = 260, Transient = true)]
     [ProvideOptionPage(typeof(DataAnalyzerOptionsPage), "SSMS Data Analyzer", "General", 0, 0, true)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideAutoLoad(Microsoft.VisualStudio.Shell.Interop.UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
@@ -102,6 +107,7 @@ namespace SsmsDataAnalyzer.Vsix
             await ResultsGrid.ResultsGridPeekCommand.InitializeAsync(this);
             await ResultsGrid.ResultsGridFindCommand.InitializeAsync(this);
             await Pivot.PivotRowsCommand.InitializeAsync(this);
+            await ResultsGrid.AggregateSelectionCommand.InitializeAsync(this);
 
             // Query-editor "Paste as SQL IN (...)". Registered on the package's own command
             // service, like every other command here. Unlike the results-grid features this

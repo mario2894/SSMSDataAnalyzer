@@ -38,6 +38,12 @@ namespace SsmsDataAnalyzer.Vsix
         /// as GridFindToolWindow.</summary>
         public const string PeekToolWindowPersistenceGuidString = "7c2e9a4f-3d5b-4e8a-9f1c-6b0d2e4f8a37";
         public static readonly Guid PeekToolWindowPersistenceGuid = new Guid(PeekToolWindowPersistenceGuidString);
+
+        /// <summary>"Aggregate selection…" — AggregateSelectionToolWindow's persistence GUID.
+        /// Same "single floating transient instance (id 0), re-targeted per invocation" shape
+        /// as PeekToolWindow/GridFindToolWindow.</summary>
+        public const string AggregateSelectionToolWindowPersistenceGuidString = "9d3b5f7a-1c4e-4a6d-8b2f-3e5a7c9d1b64";
+        public static readonly Guid AggregateSelectionToolWindowPersistenceGuid = new Guid(AggregateSelectionToolWindowPersistenceGuidString);
     }
 
     /// <summary>Numeric command/menu/group IDs used inside VSCommandTable.vsct.</summary>
@@ -69,6 +75,12 @@ namespace SsmsDataAnalyzer.Vsix
         /// group as GoToSourceForValueCommandId/GridFindCommandId, plus a Tools-menu
         /// CommandPlacement (VSCommandTable.vsct). Lead-allocated ID, plan section 10.</summary>
         public const int PivotRowsCommandId = 0x0202;
+
+        /// <summary>"Aggregate selection…" — COUNT/DISTINCT/SUM/AVERAGE/MIN/MAX of the
+        /// selected results-grid cells, shown in a small floating popup (like Redgate SQL
+        /// Prompt's status-bar aggregates). Same results-grid menu group as
+        /// PivotRowsCommandId, plus a Tools-menu CommandPlacement.</summary>
+        public const int AggregateSelectionCommandId = 0x0204;
 
         /// <summary>User request: "Paste as SQL IN (...)" in the query editor. This group is
         /// parented (in VSCommandTable.vsct only) to the STANDARD VS code-window context menu,

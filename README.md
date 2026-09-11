@@ -26,6 +26,7 @@ side by side, and turning a list of values into a SQL `IN (...)` clause.
 | **Jump to a linked record** | Right-click a cell in the results grid → **Go to source for this value** |
 | **Peek at a linked record without leaving your tab** | Right-click a cell in the results grid → **Peek source for this value** |
 | **Compare rows side by side** | Select rows in the results grid → right-click → **Pivot selected rows…** |
+| **Aggregate a selection** — COUNT, DISTINCT, SUM, AVERAGE, MIN, MAX | Select cells in the results grid → right-click → **Aggregate selection…** |
 | **Paste a list as `IN (...)`** | In a query window, right-click → **Paste as SQL IN (...)** |
 | **Settings** | **Tools → Options… → SSMS Data Analyzer** |
 | **Your own keyboard shortcuts** | **Tools → Options… → Environment → Keyboard** |
@@ -244,7 +245,42 @@ Each pivot opens in **its own tab** (Pivot 1, Pivot 2, …), so you can keep sev
 
 ---
 
-## Feature 5 — Paste a list as `IN (...)`
+## Feature 5 — Aggregate a selection
+
+Select some cells in the results grid and get their COUNT, DISTINCT, SUM, AVERAGE, MIN and MAX
+at a glance — the same idea as Redgate SQL Prompt's status-bar aggregates, but in a small
+popup you can leave open while you keep working.
+
+**Where:** select cells in the results grid → **right-click** → **Aggregate selection…**
+(also under the **Tools** menu)
+
+```
+Count      2
+Distinct   2
+Sum        252
+Average    126
+Min        125
+Max        127
+```
+
+- **Numbers use your Windows regional settings**, with thousands separators — `1.234.567,5` on
+  a Croatian machine, `1,234,567.5` on a US one.
+- **NULLs are left out** of every number — Count, Distinct, Sum and Average all behave like
+  their SQL equivalents (`NULL` here means a real NULL or the literal text `NULL`, same
+  caveat as everywhere else in the extension).
+- **Sum and Average need every non-NULL value to be a number.** If even one selected cell
+  isn't (mixed text and numbers), Sum and Average show **—**, and the small line under the
+  numbers says how many values weren't numeric. Min and Max still work in that case — by date
+  if every value is one, otherwise alphabetically.
+- **Up to 1,000,000 cells** per selection. Select more, and the status bar tells you how many
+  you picked instead of computing anything.
+- **Copy what you need:** Ctrl+C copies every row (pastes into Excel as two columns);
+  double-click a row, or right-click it → **Copy value**, to copy just that one number.
+- **Esc** closes the popup, same as Peek and Find.
+
+---
+
+## Feature 6 — Paste a list as `IN (...)`
 
 You have a list of values in a spreadsheet or an email, and you need them as a SQL `IN` list.
 
@@ -308,6 +344,7 @@ can add your own:
 | Peek source for this value | `SsmsDataAnalyzer.PeekSourceForValue` — uses the cell selected in the results grid |
 | Find… (in query results) | `SsmsDataAnalyzer.FindInResults` |
 | Pivot selected rows… | `SsmsDataAnalyzer.PivotRows` |
+| Aggregate selection… | `SsmsDataAnalyzer.AggregateSelection` — uses the cells selected in the results grid |
 | Paste as SQL IN (...) | `SsmsDataAnalyzer.PasteAsSqlIn` |
 | Paste as numeric SQL IN (...) | `SsmsDataAnalyzer.PasteAsNumericSqlIn` |
 

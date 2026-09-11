@@ -139,6 +139,23 @@
       </Button>
 
       <!--
+        "Aggregate selection…" — COUNT/DISTINCT/SUM/AVERAGE/MIN/MAX of the selected cells in a
+        small floating popup, like Redgate SQL Prompt's status-bar aggregates. Same results-grid
+        menu group as cmdidPivotRows, right after it, and deliberately NOT
+        DefaultInvisible/DynamicVisibility for the same "cold session" reason cmdidPivotRows
+        isn't — see the NOTE below about cmdidPasteAsSqlIn. Execute degrades to a status-bar
+        message when there is no grid/selection.
+      -->
+      <Button guid="guidSsmsDataAnalyzerCommandSet" id="cmdidAggregateSelection" priority="0x0125" type="Button">
+        <Parent guid="guidSsmsDataAnalyzerCommandSet" id="ResultsGridMenuGroup" />
+        <Strings>
+          <ButtonText>Aggregate selection...</ButtonText>
+          <CanonicalName>SsmsDataAnalyzer.AggregateSelection</CanonicalName>
+          <LocCanonicalName>SsmsDataAnalyzer.AggregateSelection</LocCanonicalName>
+        </Strings>
+      </Button>
+
+      <!--
         NOTE: deliberately NOT DefaultInvisible/DynamicVisibility, unlike the results-grid
         buttons. Those flags keep a command hidden until the package is loaded and its
         BeforeQueryStatus can vote on visibility — which means that in a session where nothing
@@ -193,6 +210,12 @@
     <CommandPlacement guid="guidSsmsDataAnalyzerCommandSet" id="cmdidPivotRows" priority="0x0220">
       <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
     </CommandPlacement>
+
+    <!-- "Aggregate selection…" Tools menu entry point, same "second menu via
+         CommandPlacement, not a second Button" rule as the others above. -->
+    <CommandPlacement guid="guidSsmsDataAnalyzerCommandSet" id="cmdidAggregateSelection" priority="0x0225">
+      <Parent guid="guidSsmsDataAnalyzerCommandSet" id="AnalyzeDataMenuGroup" />
+    </CommandPlacement>
   </CommandPlacements>
 
 
@@ -208,6 +231,7 @@
       <IDSymbol name="cmdidGridFind" value="0x0201" />
       <IDSymbol name="cmdidPivotRows" value="0x0202" />
       <IDSymbol name="cmdidPeekSourceForValue" value="0x0203" />
+      <IDSymbol name="cmdidAggregateSelection" value="0x0204" />
       <IDSymbol name="QueryEditorMenuGroup" value="0x1050" />
       <IDSymbol name="cmdidPasteAsSqlIn" value="0x0300" />
       <IDSymbol name="cmdidPasteAsNumericSqlIn" value="0x0301" />
