@@ -1,6 +1,6 @@
 # Current build
 
-**`SsmsDataAnalyzer.vsix` — version 0.15.2**
+**`SsmsDataAnalyzer.vsix` — version 0.16.0**
 
 Install: download the `.vsix` in this folder, close SSMS, double-click the file, reopen SSMS.
 Full instructions in the [main README](../README.md#installing-it).
@@ -31,6 +31,8 @@ why.
 | Settings | **Tools → Options… → SSMS Data Analyzer** |
 
 ## Version history
+
+**0.16.0** — **Go to source, Peek and pivot links now work on every grid when several statements run together** (e.g. three highlighted SELECTs → three grids). Each statement is matched to its own grid using SQL Server's own T-SQL parser. Still safe: if two statements return the same columns from different tables, it declines instead of guessing — which also fixes a case where the second grid could previously point at the first statement's table.
 
 **0.15.2** — Aggregate selection looks cleaner: thin lines between rows, values right-aligned and emphasised so numbers line up, labels in lighter text, and "—" (not available) greyed out.
 

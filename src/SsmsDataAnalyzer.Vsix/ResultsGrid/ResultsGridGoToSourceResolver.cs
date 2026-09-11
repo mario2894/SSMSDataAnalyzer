@@ -23,8 +23,10 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
     /// EVERY grid column from one describe call per batch, while single-cell Go to source runs
     /// the very same stages for its one column:
     /// <list type="number">
-    /// <item><see cref="DescribeAndMatchAsync"/> — split into GO batches, describe each,
-    /// match the grid's full shape (pure part: Core's <see cref="ResultShapeMatcher.Match"/>).</item>
+    /// <item><see cref="DescribeAndMatchAsync"/> — split into GO batches, add one candidate per
+    /// top-level SELECT of a multi-statement batch (<see cref="ScriptDomStatementParser"/> +
+    /// Core's <see cref="StatementCandidateBuilder"/>), describe each candidate, match the grid's
+    /// full shape (pure part: Core's <see cref="ResultShapeMatcher.MatchCandidates"/>).</item>
     /// <item><see cref="ResultShapeMatcher.ResolveColumn"/> — cross-batch agreement for one
     /// ordinal (pure, Core).</item>
     /// <item><see cref="CheckForeignKey"/> — the column's declared FK via Core's SchemaReader.</item>
@@ -182,20 +184,27 @@ namespace SsmsDataAnalyzer.Vsix.ResultsGrid
             if (batches.Count == 0)
                 return ShapeMatch.Declined(NoQueryTextMessage);
 
-            var described = new List<IReadOnlyList<DescribedColumn>>(batches.Count);
+            // The DM only describes a text's FIRST result set, so a grid produced by the 2nd..Nth
+            // SELECT of one batch needs that statement described on its own. Parsing is
+            // best-effort: any failure leaves that batch as today's whole-batch candidate only.
+            var candidateSet = StatementCandidateBuilder.Build(
+                batches.Select(ScriptDomStatementParser.Parse).ToList());
+            var candidates = candidateSet.Candidates;
+
+            var described = new List<IReadOnlyList<DescribedColumn>>(candidates.Count);
             using (var describeConn = new SqlConnection(editorConnectionString))
             {
                 await describeConn.OpenAsync(cancellationToken).ConfigureAwait(true);
 
-                for (int b = 0; b < batches.Count; b++)
+                for (int i = 0; i < candidates.Count; i++)
                 {
                     // UNFILTERED rows — gate 3 (error rows) must see is_hidden = NULL rows.
                     described.Add(await DescribeFirstResultSetService.DescribeAsync(
-                        describeConn, batches[b], describeTimeoutSeconds, cancellationToken).ConfigureAwait(true));
+                        describeConn, candidates[i].Text, describeTimeoutSeconds, cancellationToken).ConfigureAwait(true));
                 }
             }
 
-            var match = ResultShapeMatcher.Match(described, numberOfDataColumns, gridColumnNames, clickedOrdinal, clickedColumnName);
+            var match = ResultShapeMatcher.MatchCandidates(candidateSet, described, numberOfDataColumns, gridColumnNames, clickedOrdinal, clickedColumnName);
 
             // v0.7.5: the full dump stays one ActivityLog away even when the status bar
             // message can't carry all of it. Column names/metadata only, never cell values.

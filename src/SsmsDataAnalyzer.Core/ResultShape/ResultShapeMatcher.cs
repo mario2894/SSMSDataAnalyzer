@@ -8,13 +8,17 @@ namespace SsmsDataAnalyzer.Core.ResultShape
     /// described rows, is_hidden-filtered and ordinal-ordered.</summary>
     public sealed class MatchedBatch
     {
-        internal MatchedBatch(int batchIndex, IReadOnlyList<DescribedColumn> rows)
+        internal MatchedBatch(int batchIndex, IReadOnlyList<DescribedColumn> rows, int? statementNumber = null)
         {
             BatchIndex = batchIndex;
             Rows = rows;
+            StatementNumber = statementNumber;
         }
 
         public int BatchIndex { get; }
+        /// <summary>1-based top-level statement within the batch when this match came from a
+        /// statement candidate (<see cref="StatementCandidateBuilder"/>); null for the whole batch.</summary>
+        public int? StatementNumber { get; }
         public IReadOnlyList<DescribedColumn> Rows { get; }
     }
 
@@ -99,59 +103,12 @@ namespace SsmsDataAnalyzer.Core.ResultShape
             if (describedBatches == null) throw new ArgumentNullException(nameof(describedBatches));
 
             int batchCount = describedBatches.Count;
-            var fullMatches = new List<(int BatchIndex, List<DescribedColumn> Rows)>();
-            var nameMismatches = new List<(int BatchIndex, List<DescribedColumn> Rows, int MismatchOrdinal, string DescribedName, string GridName)>();
-            var countMismatches = new List<(int BatchIndex, IReadOnlyList<DescribedColumn> AllRows, List<DescribedColumn> FilteredRows)>();
-            int erroredCount = 0;
-            DescribedColumn firstError = null;
-
-            for (int b = 0; b < batchCount; b++)
-            {
-                var allRows = describedBatches[b] ?? new DescribedColumn[0];
-
-                // Gate 3: error rows come back as ROWS; checked on the UNFILTERED rows (an
-                // error row's is_hidden is NULL, so filtering first would hide it).
-                var errorRow = allRows.FirstOrDefault(r => r.ErrorNumber != null);
-                if (errorRow != null)
-                {
-                    erroredCount++;
-                    if (firstError == null) firstError = errorRow;
-                    continue;
-                }
-
-                // Drop browse-info rows (is_hidden = 1); what remains aligns 1:1 with the grid.
-                var rows = allRows.Where(r => r.IsHidden == false).OrderBy(r => r.Ordinal).ToList();
-
-                // Gate 4: exact column count.
-                if (rows.Count != numberOfDataColumns) { countMismatches.Add((b, allRows, rows)); continue; }
-
-                // Gate 5: every column's name (or only the clicked one for a degraded caller).
-                int mismatchOrdinal = -1;
-                string mismatchDescribed = null, mismatchGrid = null;
-                for (int ord = 1; ord <= numberOfDataColumns; ord++)
-                {
-                    bool haveGridNameHere = gridColumnNames != null || ord == clickedOrdinal;
-                    if (!haveGridNameHere) continue;
-
-                    var row = rows.FirstOrDefault(r => r.Ordinal == ord);
-                    string gridName = gridColumnNames != null && ord - 1 < gridColumnNames.Count
-                        ? gridColumnNames[ord - 1]
-                        : clickedColumnName;
-
-                    if (row == null || !NamesMatch(row.Name, gridName))
-                    {
-                        if (mismatchOrdinal == -1)
-                        {
-                            mismatchOrdinal = ord;
-                            mismatchDescribed = row?.Name;
-                            mismatchGrid = gridName;
-                        }
-                    }
-                }
-
-                if (mismatchOrdinal == -1) fullMatches.Add((b, rows));
-                else nameMismatches.Add((b, rows, mismatchOrdinal, mismatchDescribed, mismatchGrid));
-            }
+            var c = Classify(describedBatches, numberOfDataColumns, gridColumnNames, clickedOrdinal, clickedColumnName);
+            var fullMatches = c.FullMatches;
+            var nameMismatches = c.NameMismatches;
+            var countMismatches = c.CountMismatches;
+            int erroredCount = c.Errored.Count;
+            DescribedColumn firstError = c.Errored.Count > 0 ? c.Errored[0].ErrorRow : null;
 
             if (fullMatches.Count > 0)
                 return ShapeMatch.Matched(fullMatches.Select(m => new MatchedBatch(m.BatchIndex, m.Rows)).ToList());
@@ -186,6 +143,182 @@ namespace SsmsDataAnalyzer.Core.ResultShape
             if (erroredCount > 0) parts.Add($"{erroredCount} errored — {DescribeError(firstError)}");
             string detail = parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "";
             return ShapeMatch.Declined($"Go to source: the query text has {batchCount} batch(es) and none produced a result matching this grid's {numberOfDataColumns} columns{detail} — declined rather than risk the wrong table.", dumps);
+        }
+
+        /// <summary>
+        /// <see cref="Match"/> over a <see cref="StatementCandidateBuilder"/> candidate set:
+        /// whole-batch candidates plus one per top-level result-returning statement. Gates 3/4/5
+        /// run per candidate exactly as per batch. Without any statement candidate this IS
+        /// <see cref="Match"/> (same messages). With some:
+        /// <list type="bullet">
+        /// <item>full matches from the SAME batch whose described rows are identical (the whole
+        /// batch and its first SELECT describe the same result) count once;</item>
+        /// <item>a decline never quotes one arbitrary statement's mismatch — it reports how many
+        /// statements were checked and why none matched.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="described">One entry per <see cref="CandidateSet.Candidates"/> entry, same
+        /// order: the UNFILTERED describe rows for that candidate's text.</param>
+        public static ShapeMatch MatchCandidates(
+            CandidateSet candidateSet,
+            IReadOnlyList<IReadOnlyList<DescribedColumn>> described,
+            int numberOfDataColumns,
+            IReadOnlyList<string> gridColumnNames,
+            int clickedOrdinal,
+            string clickedColumnName)
+        {
+            if (candidateSet == null) throw new ArgumentNullException(nameof(candidateSet));
+            if (described == null) throw new ArgumentNullException(nameof(described));
+            var candidates = candidateSet.Candidates;
+            if (described.Count != candidates.Count)
+                throw new ArgumentException("One describe result per candidate is required.", nameof(described));
+
+            if (candidateSet.StatementCandidateCount == 0)
+                return Match(described, numberOfDataColumns, gridColumnNames, clickedOrdinal, clickedColumnName);
+
+            var splitBatches = new HashSet<int>(candidates.Where(k => !k.IsWholeBatch).Select(k => k.BatchIndex));
+
+            // What a decline counts as "a statement": each statement candidate, plus the whole
+            // batch for a batch that was not split (it is one unit as far as we can tell).
+            bool Counted(int i) => !candidates[i].IsWholeBatch || !splitBatches.Contains(candidates[i].BatchIndex);
+
+            var c = Classify(described, numberOfDataColumns, gridColumnNames, clickedOrdinal, clickedColumnName);
+
+            if (c.FullMatches.Count > 0)
+            {
+                var kept = new List<(int Index, List<DescribedColumn> Rows)>();
+                foreach (var m in c.FullMatches)
+                {
+                    bool duplicate = kept.Any(k =>
+                        candidates[k.Index].BatchIndex == candidates[m.BatchIndex].BatchIndex &&
+                        SameDescribedRows(k.Rows, m.Rows));
+                    if (!duplicate) kept.Add(m);
+                }
+                return ShapeMatch.Matched(kept
+                    .Select(k => new MatchedBatch(candidates[k.Index].BatchIndex, k.Rows, candidates[k.Index].StatementNumber))
+                    .ToList());
+            }
+
+            int batchCount = candidates.Where(k => k.IsWholeBatch).Count();
+            string Label(int i) => candidates[i].IsWholeBatch
+                ? $"batch {candidates[i].BatchIndex + 1} of {batchCount}"
+                : $"batch {candidates[i].BatchIndex + 1} of {batchCount}, statement {candidates[i].StatementNumber}";
+
+            var dumps = new List<string>();
+            foreach (var cm in c.CountMismatches.Where(x => Counted(x.BatchIndex))) dumps.Add(CandidateDump("count mismatch", Label(cm.BatchIndex), cm.AllRows));
+            foreach (var nm in c.NameMismatches.Where(x => Counted(x.BatchIndex))) dumps.Add(CandidateDump("name mismatch", Label(nm.BatchIndex), nm.Rows));
+
+            int countedTotal = Enumerable.Range(0, candidates.Count).Count(Counted);
+            int countMismatchCount = c.CountMismatches.Count(x => Counted(x.BatchIndex));
+            int nameMismatchCount = c.NameMismatches.Count(x => Counted(x.BatchIndex));
+            var countedErrors = c.Errored.Where(x => Counted(x.Index)).ToList();
+
+            var parts = new List<string>();
+            if (countMismatchCount > 0) parts.Add($"{countMismatchCount} had a different column count");
+            if (nameMismatchCount > 0) parts.Add($"{nameMismatchCount} had different column names");
+            if (countedErrors.Count > 0) parts.Add($"{countedErrors.Count} errored — {DescribeError(countedErrors[0].ErrorRow)}");
+            if (candidateSet.CapReached) parts.Add($"only the first {candidateSet.StatementCap} statements were checked");
+            string detail = parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "";
+            return ShapeMatch.Declined($"Go to source: none of the {countedTotal} statement(s) in the query that ran produced a result matching this grid's {numberOfDataColumns} columns{detail} — declined rather than risk the wrong table.", dumps);
+        }
+
+        private sealed class Classification
+        {
+            public readonly List<(int BatchIndex, List<DescribedColumn> Rows)> FullMatches = new List<(int, List<DescribedColumn>)>();
+            public readonly List<(int BatchIndex, List<DescribedColumn> Rows, int MismatchOrdinal, string DescribedName, string GridName)> NameMismatches = new List<(int, List<DescribedColumn>, int, string, string)>();
+            public readonly List<(int BatchIndex, IReadOnlyList<DescribedColumn> AllRows, List<DescribedColumn> FilteredRows)> CountMismatches = new List<(int, IReadOnlyList<DescribedColumn>, List<DescribedColumn>)>();
+            /// <summary>In describe order; <see cref="Match"/> counts every one, the first one's
+            /// error is quoted.</summary>
+            public readonly List<(int Index, DescribedColumn ErrorRow)> Errored = new List<(int, DescribedColumn)>();
+        }
+
+        /// <summary>Gates 3, 4, 5 for every described text. "BatchIndex"/"Index" in the tuples
+        /// is the index into <paramref name="described"/>.</summary>
+        private static Classification Classify(
+            IReadOnlyList<IReadOnlyList<DescribedColumn>> described,
+            int numberOfDataColumns,
+            IReadOnlyList<string> gridColumnNames,
+            int clickedOrdinal,
+            string clickedColumnName)
+        {
+            var result = new Classification();
+
+            for (int b = 0; b < described.Count; b++)
+            {
+                var allRows = described[b] ?? new DescribedColumn[0];
+
+                // Gate 3: error rows come back as ROWS; checked on the UNFILTERED rows (an
+                // error row's is_hidden is NULL, so filtering first would hide it).
+                var errorRow = allRows.FirstOrDefault(r => r.ErrorNumber != null);
+                if (errorRow != null)
+                {
+                    result.Errored.Add((b, errorRow));
+                    continue;
+                }
+
+                // Drop browse-info rows (is_hidden = 1); what remains aligns 1:1 with the grid.
+                var rows = allRows.Where(r => r.IsHidden == false).OrderBy(r => r.Ordinal).ToList();
+
+                // Gate 4: exact column count.
+                if (rows.Count != numberOfDataColumns) { result.CountMismatches.Add((b, allRows, rows)); continue; }
+
+                // Gate 5: every column's name (or only the clicked one for a degraded caller).
+                int mismatchOrdinal = -1;
+                string mismatchDescribed = null, mismatchGrid = null;
+                for (int ord = 1; ord <= numberOfDataColumns; ord++)
+                {
+                    bool haveGridNameHere = gridColumnNames != null || ord == clickedOrdinal;
+                    if (!haveGridNameHere) continue;
+
+                    var row = rows.FirstOrDefault(r => r.Ordinal == ord);
+                    string gridName = gridColumnNames != null && ord - 1 < gridColumnNames.Count
+                        ? gridColumnNames[ord - 1]
+                        : clickedColumnName;
+
+                    if (row == null || !NamesMatch(row.Name, gridName))
+                    {
+                        if (mismatchOrdinal == -1)
+                        {
+                            mismatchOrdinal = ord;
+                            mismatchDescribed = row?.Name;
+                            mismatchGrid = gridName;
+                        }
+                    }
+                }
+
+                if (mismatchOrdinal == -1) result.FullMatches.Add((b, rows));
+                else result.NameMismatches.Add((b, rows, mismatchOrdinal, mismatchDescribed, mismatchGrid));
+            }
+
+            return result;
+        }
+
+        /// <summary>Exact (ordinal) equality of everything a later stage reads from a matched
+        /// row — only then is a second match truly redundant.</summary>
+        private static bool SameDescribedRows(IReadOnlyList<DescribedColumn> a, IReadOnlyList<DescribedColumn> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                var x = a[i];
+                var y = b[i];
+                if (x.Ordinal != y.Ordinal || x.MaxLength != y.MaxLength ||
+                    !string.Equals(x.Name, y.Name, StringComparison.Ordinal) ||
+                    !string.Equals(x.SourceDatabase, y.SourceDatabase, StringComparison.Ordinal) ||
+                    !string.Equals(x.SourceSchema, y.SourceSchema, StringComparison.Ordinal) ||
+                    !string.Equals(x.SourceTable, y.SourceTable, StringComparison.Ordinal) ||
+                    !string.Equals(x.SourceColumn, y.SourceColumn, StringComparison.Ordinal) ||
+                    !string.Equals(x.SystemTypeName, y.SystemTypeName, StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
+        }
+
+        private static string CandidateDump(string reason, string label, IReadOnlyList<DescribedColumn> allRows)
+        {
+            var lines = allRows.Select(r =>
+                $"  ordinal={r.Ordinal} name='{r.Name ?? "<null>"}' is_hidden={(r.IsHidden.HasValue ? r.IsHidden.Value.ToString() : "NULL")} error_number={(r.ErrorNumber.HasValue ? r.ErrorNumber.Value.ToString() : "NULL")}");
+            return $"Go to source ({reason}) — full describe dump for {label}:\n{string.Join("\n", lines)}";
         }
 
         /// <summary>

@@ -198,8 +198,9 @@ record.
 - **With a keyboard shortcut** it uses the grid's current cell (the one you last clicked or
   moved to with the arrow keys). If several cells are selected, the status bar says which row's
   value it used.
-- **Several statements run together** (nothing highlighted, many `SELECT`s): only the first
-  grid can be matched. Highlight the statement you want and run just that.
+- **Several statements run together** work too — each grid is matched to the statement that
+  produced it. If two of them return the same columns from *different* tables, it declines
+  rather than guess; run just the statement you want.
 
 ---
 

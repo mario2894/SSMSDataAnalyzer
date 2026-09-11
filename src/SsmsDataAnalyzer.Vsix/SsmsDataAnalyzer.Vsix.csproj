@@ -152,6 +152,19 @@
     </Reference>
 
     <!--
+      Multi-statement "Go to source": Microsoft's T-SQL parser splits a batch into top-level
+      statements (ResultsGrid\ScriptDomStatementParser.cs). SSMS 22 ships 18.0.0.0 in
+      Extensions\Application (a probing path in Ssms.exe.config; SQLEditors.dll references the
+      same identity), so it is host-owned like every reference above: never copied, never
+      packaged (see SsmsHostOwnedAssembly below), and only used behind a try/catch fallback.
+    -->
+    <Reference Include="Microsoft.SqlServer.TransactSql.ScriptDom, Version=18.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91">
+      <HintPath>$(SsmsIdeDir)\Extensions\Application\Microsoft.SqlServer.TransactSql.ScriptDom.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>true</SpecificVersion>
+    </Reference>
+
+    <!--
       SQLEditors.dll (above) was built against Microsoft.VisualStudio.Interop 18.0.0.0 — SSMS
       22 is a VS 18.x shell — while the VS SDK NuGet package pulls in the 17.0.0.0 copy,
       which CSC rejects outright (CS1705, "higher version than referenced assembly") rather
@@ -243,6 +256,7 @@
     <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.RegSvrEnum.dll" />
     <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Extensions\Application\SQLEditors.dll" />
     <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Microsoft.SqlServer.GridControl.dll" />
+    <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\Extensions\Application\Microsoft.SqlServer.TransactSql.ScriptDom.dll" />
     <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\PublicAssemblies\Microsoft.VisualStudio.Interop.dll" />
     <SsmsIdeDirExpectedFile Include="$(SsmsIdeDir)\PublicAssemblies\envdte.dll" />
   </ItemGroup>
@@ -419,6 +433,7 @@
     <SsmsHostOwnedAssembly Include="Microsoft.Extensions.Primitives.dll" />
     <SsmsHostOwnedAssembly Include="System.Formats.Asn1.dll" />
     <SsmsHostOwnedAssembly Include="System.Security.Cryptography.Pkcs.dll" />
+    <SsmsHostOwnedAssembly Include="Microsoft.SqlServer.TransactSql.ScriptDom.dll" />
   </ItemGroup>
 
   <!--
@@ -448,7 +463,7 @@
     suppression list itself being edited incorrectly, not just a new dependency.
   -->
   <PropertyGroup>
-    <SsmsHostOwnedAssemblyPattern>^(Microsoft\.Data\.SqlClient(\..+)?|Azure\..+|Microsoft\.Identity\.Client(\..+)?|Microsoft\.IdentityModel\..+|System\.IdentityModel\..+|System\.ClientModel|System\.Text\.Json|System\.Memory\.Data|System\.Configuration\.ConfigurationManager|System\.Security\.Cryptography\.ProtectedData|System\.Security\.Cryptography\.Pkcs|System\.Security\.Permissions|System\.Text\.Encodings\.Web|Microsoft\.IO\.Redist|Microsoft\.NET\.StringTools|Microsoft\.Extensions\..+|System\.Formats\.Asn1)\.dll$</SsmsHostOwnedAssemblyPattern>
+    <SsmsHostOwnedAssemblyPattern>^(Microsoft\.Data\.SqlClient(\..+)?|Azure\..+|Microsoft\.Identity\.Client(\..+)?|Microsoft\.IdentityModel\..+|System\.IdentityModel\..+|System\.ClientModel|System\.Text\.Json|System\.Memory\.Data|System\.Configuration\.ConfigurationManager|System\.Security\.Cryptography\.ProtectedData|System\.Security\.Cryptography\.Pkcs|System\.Security\.Permissions|System\.Text\.Encodings\.Web|Microsoft\.IO\.Redist|Microsoft\.NET\.StringTools|Microsoft\.Extensions\..+|System\.Formats\.Asn1|Microsoft\.SqlServer\.TransactSql\.ScriptDom)\.dll$</SsmsHostOwnedAssemblyPattern>
   </PropertyGroup>
 
   <Target Name="SsmsDataAnalyzerAssertNoHostOwnedAssembliesInVsix" AfterTargets="GetVsixSourceItems">
